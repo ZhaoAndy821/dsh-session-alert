@@ -51,9 +51,15 @@ function bridgeScript() {
   return fs.existsSync(shipped) ? shipped : ''
 }
 
+/** The marker 'cli uninstall' leaves behind; the shipped copy must not undo it. */
+function disabledMarker() {
+  return path.join(path.dirname(path.join(HOME, 'desktop-alert')), 'desktop-alert.disabled')
+}
+
 /** Bring the bridge up when it is not answering; never throws, never storms. */
 async function ensureBridge() {
   try {
+    if (fs.existsSync(disabledMarker())) return false
     if (await findBridge()) return true
     if (Date.now() - lastSpawnAt < SPAWN_COOLDOWN_MS) return false
     const script = bridgeScript()
@@ -65,6 +71,7 @@ async function ensureBridge() {
       windowsHide: true,
       cwd: path.dirname(script)
     })
+    child.on('error', (error) => log('could not start the bridge process: ' + (error && error.message ? error.message : String(error))))
     child.unref()
     log('desktop bridge was not running - started it (pid ' + (child.pid || '?') + ')')
     return true
@@ -136,7 +143,9 @@ export function apply(ctx) {
         return () => clearInterval(timer)
       }, 'dsh-session-alert: bridge watchdog')
     } else {
-      setInterval(() => { void ensureBridge() }, WATCHDOG_MS)
+      // No teardown hook, so no repeating timer: an interval nobody can clear
+      // would keep a disposed host alive. One check at load is enough here.
+      log('host context has no effect(); the periodic bridge check stays off')
     }
   } catch (error) {
     log('watchdog could not start: ' + (error && error.message ? error.message : String(error)))

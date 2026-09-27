@@ -82,7 +82,7 @@ nothing ever asks the bridge for a card.
 | `node cli.mjs test [--kind waiting] [--surface toast]` | raise one card or toast without any DSH page |
 | `node cli.mjs logs [--lines 40]` | tail `~/.dsh/desktop-alert/bridge.log` |
 | `node cli.mjs install-autostart` / `uninstall-autostart` | Startup-folder shortcut (`DSH Desktop Alert.lnk`, window style 7) |
-| `node cli.mjs uninstall` | stop, remove autostart, delete the runtime copy |
+| `node cli.mjs uninstall` | stop, remove autostart, delete the runtime copy **and write `~/.dsh/desktop-alert.disabled`** — without that marker the host half would respawn the bridge from its own shipped copy within 5 minutes. `cli install` removes the marker |
 
 ## Surfaces
 
@@ -117,8 +117,11 @@ Set it per notification from the plugin (`CONFIG.desktopAlertSurface` in
 ## Tests
 
 ```powershell
-node test/desktop-alert.mjs   # 11 checks: bundle runs, probe, completion -> /notify, click -> openSession + /ack
-node test/bridge.mjs          # 14 checks: real bridge on a private port, SSE, card spawn, click fan-out, origin guard
+node test/desktop-alert.mjs   # 16 checks: bundle runs, probe, completion/waiting -> /notify, click -> openSession + /ack
+node test/bridge.mjs          # 22 checks: real bridge on a private port, SSE, card spawn, click fan-out, origin guard, failure surface
+node test/host.mjs            # 9 checks: api-session/error -> bridge, rate limit, a context without events
+node test/supervise.mjs       # 17 checks: restart decision, loop with fakes, real probe, single-instance guard
+node test/singleton.mjs       # 5 checks: two bridges started at once, exactly one survives (F1 regression)
 node test/smoke.mjs           # 10 checks: the pure reminder projection (unchanged)
 ```
 

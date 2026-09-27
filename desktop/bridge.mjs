@@ -429,7 +429,19 @@ for (const port of candidates) {
     bound = port
     break
   } catch (err) {
-    if (err && err.code === 'EADDRINUSE') { log('port ' + port + ' busy, trying the next one'); continue }
+    if (err && err.code === 'EADDRINUSE') {
+      // The pre-bind probe can lose a race with another spawner. Re-probe the
+      // port that just refused us: if our own service answers, this process must
+      // exit, or the machine ends up with two bridges on two ports.
+      const owner = await probe(port)
+      if (owner) {
+        log('port ' + port + ' is held by another bridge - exiting instead of opening a second one')
+        console.log(JSON.stringify({ ok: true, alreadyRunning: true, port, ...owner }))
+        process.exit(0)
+      }
+      log('port ' + port + ' busy (not our service), trying the next one')
+      continue
+    }
     log('listen failed on ' + port + ': ' + (err && err.message ? err.message : String(err)))
     process.exit(1)
   }

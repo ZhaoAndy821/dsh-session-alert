@@ -91,8 +91,11 @@ _置顶卡片实录：不出现在任务栏、不抢焦点，9 秒后自动淡�
 node scripts/build.mjs && node test/smoke.mjs   # 纯逻辑：10 项投射/边沿/收尾断言，不需要浏览器
 node test/browser-check.mjs                     # 真页面结构校验：插件是否真的挂上、有没有报错
 node test/browser-check.mjs --stage             # 端到端：发一条测试提示词 → 切走 → 等提醒出现 → 点卡片
-node test/desktop-alert.mjs                     # 11 项：bundle 沙箱内跑通 → 探活 → 完成即 POST /notify → 点击即 openSession + /ack
-node test/bridge.mjs                            # 14 项：私有端口起真桥接、SSE、卡片进程、点击扇出、跨源拦截
+node test/desktop-alert.mjs                     # 16 项：bundle 沙箱内跑通 → 探活 → 完成/等待即 POST /notify → 点击即 openSession + /ack
+node test/bridge.mjs                            # 22 项：私有端口起真桥接、SSE、卡片进程、点击扇出、跨源拦截、失败面
+node test/host.mjs                              # 9 项：api-session/error → 桥接投递、限流、无事件总线也不抛
+node test/supervise.mjs                         # 17 项：守护决策、用假依赖跑循环、真探活、单实例守卫
+node test/singleton.mjs                         # 5 项：同一刻起两个 bridge，只允许活一个（F1 回归）
 ```
 
 `browser-check.mjs` 会用本机 profile 的凭证文件（`~/.dsh/.credentials.yaml` 里的 browser-session 密钥）现签一个会话 cookie 给无头 Chromium，所以不需要 token URL，也不会动你正在用的窗口。

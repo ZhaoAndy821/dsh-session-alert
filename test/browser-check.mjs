@@ -131,6 +131,20 @@ try {
   assert.equal(facts.style, true, 'plugin stylesheet missing: apply() did not run')
   assert.equal(facts.anchor, true, 'sidebar.footer.action seat not rendered')
   assert.equal(facts.strayStack, false, 'the card stack was portalled into <body> instead of the sidebar dock')
+
+  // The dock only exists while the sidebar is wide (the rail keeps the fixed
+  // placement), so assert it conditionally - and assert it for real, not just
+  // collect the flag (review F5).
+  const dockState = await page.evaluate(() => {
+    const anchor = document.querySelector('.dsa-anchor')
+    const footer = anchor ? anchor.closest('[class*="_footArea"]') : null
+    return {
+      footerWidth: footer ? Math.round(footer.getBoundingClientRect().width) : 0,
+      dock: !!document.querySelector('.dsa-dock')
+    }
+  })
+  assert.ok(dockState.footerWidth < 160 || dockState.dock, 'the sidebar is wide but no dock element exists: ' + JSON.stringify(dockState))
+  console.log('structure: dock: ' + JSON.stringify(dockState))
   assert.deepEqual(consoleErrors.filter(mine), [], 'plugin logged console errors')
   assert.deepEqual(pageErrors.filter(mine), [], 'plugin threw in the page')
   console.log('structure ok: ' + JSON.stringify(facts))
@@ -204,6 +218,15 @@ async function stage(page) {
   })
   assert.equal(docked.inDock, true, 'the card stack is not inside the sidebar dock: ' + JSON.stringify(docked))
   assert.notEqual(docked.insideColumn, false, 'the card stack overhangs the sidebar column: ' + JSON.stringify(docked))
+
+  // A docked stack must not still be the fixed overlay: that variant is the
+  // original defect (a floating card on top of the cost panel) and the one
+  // assertion above cannot see it.
+  const stackPosition = await page.evaluate(() => {
+    const stack = document.querySelector('.dsa-cards')
+    return stack ? getComputedStyle(stack).position : null
+  })
+  assert.equal(stackPosition, 'static', 'the docked stack is still the fixed overlay (position=' + stackPosition + ')')
   console.log('stage: dock placement: ' + JSON.stringify(docked))
   console.log('stage: surfaces appeared: ' + JSON.stringify(surface))
 

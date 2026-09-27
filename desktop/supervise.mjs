@@ -57,7 +57,8 @@ function log(message) {
  */
 export function decide(state) {
   if (state.healthy) return 'idle'
-  if (state.sinceLastSpawnMs < RETRY_MS) return 'wait'
+  const retryMs = state.retryMs === undefined ? RETRY_MS : state.retryMs
+  if (state.sinceLastSpawnMs < retryMs) return 'wait'
   return 'spawn'
 }
 
@@ -76,8 +77,17 @@ export async function probe(ports = PORTS) {
   return 0
 }
 
+/** The marker 'cli uninstall' leaves behind, so nothing respawns a removed service. */
+export function disabledMarker() {
+  return path.join(path.dirname(RUNTIME), 'desktop-alert.disabled')
+}
+
 /** Start the bridge detached; returns the pid or 0. */
 export function spawnBridge(options = {}) {
+  if (fs.existsSync(options.marker || disabledMarker())) {
+    log('desktop alerts are disabled (' + (options.marker || disabledMarker()) + ') - not starting the bridge')
+    return 0
+  }
   const script = options.script || (fs.existsSync(path.join(RUNTIME, 'bridge.mjs'))
     ? path.join(RUNTIME, 'bridge.mjs')
     : path.join(HERE, 'bridge.mjs'))
@@ -88,6 +98,9 @@ export function spawnBridge(options = {}) {
       windowsHide: true,
       cwd: path.dirname(script)
     })
+    // An 'error' event without a listener is an uncaught exception, not a
+    // silent failure; the caller documents this path as never throwing.
+    child.on('error', (error) => log('bridge process error: ' + (error && error.message ? error.message : String(error))))
     child.unref()
     return child.pid || 0
   } catch (error) {
@@ -101,7 +114,35 @@ export function spawnBridge(options = {}) {
  * spawning anything.
  * @param deps - { probe, spawnBridge, log, sleep, checkMs, retryMs, rounds }
  */
+/**
+ * Take ownership of the singleton slot: refuse to run beside another supervisor,
+ * otherwise write the pid file and clean it up on every way out.
+ * @returns true when this process owns the slot.
+ */
+export async function acquireOwnership(pidPath, emit) {
+  const running = await anotherSupervisorRunning(pidPath)
+  if (running) {
+    emit('another supervisor is already running (pid ' + running + ') - exiting')
+    return false
+  }
+  try {
+    fs.mkdirSync(path.dirname(pidPath), { recursive: true })
+    fs.writeFileSync(pidPath, String(process.pid), 'utf8')
+  } catch { /* the pid file is a convenience, not a requirement */ }
+  const cleanUp = () => { try { fs.rmSync(pidPath, { force: true }) } catch { /* ignore */ } }
+  process.on('exit', cleanUp)
+  process.on('SIGTERM', () => { cleanUp(); process.exit(0) })
+  process.on('SIGINT', () => { cleanUp(); process.exit(0) })
+  return true
+}
+
 export async function runSupervisor(deps) {
+  // Ownership lives HERE, not in main(): 'cli supervise' calls this function
+  // directly, and a supervisor started that way used to be invisible to
+  // 'cli stop' (and unguarded against a second one).
+  const pidPath = deps.pidPath || path.join(RUNTIME, 'supervisor.pid')
+  const emitEarly = deps.log || log
+  if (deps.guard !== false && !(await acquireOwnership(pidPath, emitEarly))) return false
   const check = deps.check
   const start = deps.spawn
   const emit = deps.log || log
@@ -118,7 +159,7 @@ export async function runSupervisor(deps) {
     const action = decide({
       healthy,
       sinceLastSpawnMs: Date.now() - lastSpawnAt,
-      retryMs: deps.retryMs || RETRY_MS
+      retryMs: deps.retryMs === undefined ? RETRY_MS : deps.retryMs
     })
     if (action === 'spawn') {
       lastSpawnAt = Date.now()
@@ -141,21 +182,7 @@ export async function anotherSupervisorRunning(pidPath = path.join(RUNTIME, 'sup
 }
 
 async function main() {
-  const running = await anotherSupervisorRunning()
-  if (running) {
-    log('another supervisor is already running (pid ' + running + ') - exiting')
-    return
-  }
-  try {
-    fs.mkdirSync(RUNTIME, { recursive: true })
-    fs.writeFileSync(path.join(RUNTIME, 'supervisor.pid'), String(process.pid), 'utf8')
-  } catch { /* the pid file is a convenience, not a requirement */ }
-  const cleanUp = () => {
-    try { fs.rmSync(path.join(RUNTIME, 'supervisor.pid'), { force: true }) } catch { /* ignore */ }
-  }
-  process.on('exit', cleanUp)
-  process.on('SIGTERM', () => { cleanUp(); process.exit(0) })
-  process.on('SIGINT', () => { cleanUp(); process.exit(0) })
+  // The guard and the pid file are handled by runSupervisor.
   await runSupervisor({
     check: () => probe(),
     spawn: () => spawnBridge(),

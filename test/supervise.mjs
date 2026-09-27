@@ -9,7 +9,7 @@
  * usage: node test/supervise.mjs
  */
 import { createServer } from 'node:http'
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { anotherSupervisorRunning, decide, probe, runSupervisor } from '../desktop/supervise.mjs'
@@ -39,6 +39,22 @@ ok('the supervisor restarts a missing bridge exactly once', events.filter((e) =>
 ok('it reports the recovery in its log', events.some((e) => String(e).includes('started the bridge (pid 4242)')), JSON.stringify(events))
 ok('it notices when the bridge comes back', events.some((e) => String(e).includes('bridge is up on port 41411')), JSON.stringify(events))
 ok('it returns the last observed state', healthy === true, String(healthy))
+
+// --- F4: the injected retry window must win over the module default
+ok('an injected retry window is honoured', decide({ healthy: false, sinceLastSpawnMs: 250, retryMs: 100 }) === 'spawn', decide({ healthy: false, sinceLastSpawnMs: 250, retryMs: 100 }))
+ok('and still blocks inside it', decide({ healthy: false, sinceLastSpawnMs: 50, retryMs: 100 }) === 'wait', decide({ healthy: false, sinceLastSpawnMs: 50, retryMs: 100 }))
+
+// --- F2: ownership lives in the loop, so 'cli supervise' is guarded too
+const ownDir = mkdtempSync(path.join(tmpdir(), 'dsh-own-'))
+const ownPid = path.join(ownDir, 'supervisor.pid')
+const owned = await runSupervisor({ check: async () => 41411, spawn: () => 0, log: () => {}, sleep: async () => {}, rounds: 1, pidPath: ownPid })
+ok('the loop publishes its own pid file', owned === true && existsSync(ownPid) && readFileSync(ownPid, 'utf8').trim() === String(process.pid), String(existsSync(ownPid)))
+const foreignPid = path.join(ownDir, 'foreign.pid')
+writeFileSync(foreignPid, String(process.ppid), 'utf8')
+const refusal = []
+const refused = await runSupervisor({ check: async () => 41411, spawn: () => 0, log: (line) => refusal.push(line), sleep: async () => {}, rounds: 1, pidPath: foreignPid })
+ok('a live foreign supervisor makes the loop refuse to run', refused === false && refusal.some((line) => String(line).includes('another supervisor is already running')), JSON.stringify(refusal))
+rmSync(ownDir, { recursive: true, force: true })
 
 // --- the real probe against a stub that does and does not identify itself
 const good = createServer((req, res) => {

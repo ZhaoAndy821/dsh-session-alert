@@ -26,6 +26,7 @@ const PORTS = [41411, 41412, 41413]
 const STARTUP = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
 const SHORTCUT = path.join(STARTUP, 'DSH Desktop Alert.lnk')
 const SUPERVISOR_PID = path.join(RUNTIME, 'supervisor.pid')
+const DISABLED = path.join(path.dirname(RUNTIME), 'desktop-alert.disabled')
 
 /** Stop a supervisor we started, so 'stop' really stops the service. */
 function stopSupervisor() {
@@ -94,6 +95,7 @@ const FILES = ['bridge.mjs', 'supervise.mjs', 'present.ps1', 'toast.ps1', 'cli.m
 
 function install() {
   fs.mkdirSync(RUNTIME, { recursive: true })
+  fs.rmSync(DISABLED, { force: true })
   const copied = []
   for (const name of FILES) {
     const from = path.join(HERE, name)
@@ -217,6 +219,10 @@ switch (command) {
     stopSupervisor()
     try { await post('/quit', {}) } catch { /* it may already be down */ }
     uninstallAutostart()
+    // The host half ships its own bridge copy, so deleting the runtime alone
+    // would let the next 5-minute check bring the service back.
+    fs.writeFileSync(DISABLED, 'Removed by "cli.mjs uninstall". Delete this file (or run "cli.mjs install") to re-enable desktop alerts.\n', 'utf8')
+    console.log('wrote ' + DISABLED)
     if (fs.existsSync(RUNTIME)) { fs.rmSync(RUNTIME, { recursive: true, force: true }); console.log('removed ' + RUNTIME) }
     break
   }
