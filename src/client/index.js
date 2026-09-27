@@ -184,6 +184,8 @@ const CSS = [
   ".dsa-banner{pointer-events:auto;display:flex;gap:8px;align-items:center;max-width:min(560px,calc(100vw - 48px));padding:8px 12px;border:1px solid var(--dsw-alias-border-l2,#e3e5e8);border-radius:999px;background:var(--dsw-specific-menu,#ffffff);color:var(--dsw-alias-label-primary,#1f2329);box-shadow:var(--dsw-shadow-lv3,0 6px 20px rgba(0,0,0,.12));font-size:12px;cursor:pointer;animation:dsa-in .18s ease-out}",
   ".dsa-banner-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
   ".dsa-offline{pointer-events:auto;padding:6px 10px;border:1px dashed var(--dsw-alias-border-l2,#e3e5e8);border-radius:10px;color:var(--dsw-alias-label-secondary,#8a9099);font-size:11px;line-height:1.45}",
+  ".dsa-dock{display:block;width:100%;margin:0 0 8px}",
+  ".dsa-cards--docked{position:static;left:auto;bottom:auto;width:auto}",
   "@keyframes dsa-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}"
 ].join("");
 
@@ -357,9 +359,9 @@ function createDesktopAlert(options) {
 }
 
 /** Render through a body portal so no transformed ancestor can trap the fixed layer. */
-function portal(node) {
+function portal(node, container) {
   if (typeof document !== "undefined" && reactDom && typeof reactDom.createPortal === "function") {
-    return reactDom.createPortal(node, document.body);
+    return reactDom.createPortal(node, container || document.body);
   }
   return node;
 }
@@ -969,7 +971,12 @@ function CardStack(props) {
       onClick: function () { actions.requestPermission(); }
     }, t("notify.permission")));
   }
-  return h("div", { className: "dsa-cards", style: cardStackStyle(props.box, props.wide) }, children);
+  return h("div", {
+    className: "dsa-cards" + (props.docked ? " dsa-cards--docked" : ""),
+    style: props.docked
+      ? { width: props.dockWidth > 0 ? props.dockWidth + "px" : "100%" }
+      : cardStackStyle(props.box, props.wide)
+  }, children);
 }
 
 /** Seat A: an invisible anchor in the sidebar footer, plus the portal'd cards. */
@@ -983,6 +990,38 @@ function CardAnchor(props) {
   const pair = react.useState(null);
   const box = pair[0];
   const setBox = pair[1];
+  const dockPair = react.useState(null);
+  const dock = dockPair[0];
+  const setDock = dockPair[1];
+
+  /**
+   * Dock the stack inside the sidebar footer block.
+   *
+   * The seat sits in the footer's action row, and the block above that row is the
+   * scrollable browse region - where the cost panel and the session list live. A
+   * fixed overlay anchored just above the seat therefore lands on top of them
+   * (reported 2026-09-27).
+   *
+   * The seat is rendered by the shell's own bottom strip, so the nearest footer
+   * ancestor is that strip, not the sidebar column: the stack is docked there as
+   * a real layout participant (the strip grows, nothing is covered) and its width
+   * is pinned to the measured sidebar column so the cards keep their size and
+   * left alignment. No pixel offset has to be guessed.
+   */
+  react.useLayoutEffect(function () {
+    const element = seatRef.current;
+    if (!element || wide === false || typeof document === "undefined") { setDock(null); return undefined; }
+    const footer = typeof element.closest === "function" ? element.closest('[class*="_footArea"]') : null;
+    if (!footer) { setDock(null); return undefined; }
+    const holder = document.createElement("div");
+    holder.className = "dsa-dock";
+    footer.insertBefore(holder, footer.firstChild);
+    setDock(holder);
+    return function () {
+      try { if (holder.parentNode) holder.parentNode.removeChild(holder); } catch (err) { /* noop */ }
+      setDock(null);
+    };
+  }, [wide]);
 
   react.useLayoutEffect(function () {
     const element = seatRef.current;
@@ -1016,12 +1055,16 @@ function CardAnchor(props) {
       nowMs: snapshot.nowMs,
       box: box,
       wide: wide,
+      docked: dock !== null,
+      dockWidth: box ? Math.round(box.width) : 0,
       t: t,
       actions: actions
     }))
     : null;
 
-  return h(react.Fragment, null, h("div", { ref: seatRef, className: "dsa-anchor", "aria-hidden": "true" }), stack);
+  return h(react.Fragment, null,
+    h("div", { ref: seatRef, className: "dsa-anchor", "aria-hidden": "true" }),
+    stack === null ? null : (dock ? portal(stack, dock) : portal(stack)));
 }
 
 /** Seat B: the top-center banner stack. */
