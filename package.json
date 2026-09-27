@@ -44,15 +44,20 @@
   },
   "files": [
     "lib",
+    "host",
     "src",
     "scripts",
     "desktop",
     "docs",
     "test",
+    "cordis.patch.yml",
     "README.md"
   ],
   "dsh": {
     "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [
@@ -63,5 +68,12 @@
         "uiWorkspace"
       ]
     }
+  },
+  "main": "host/index.js",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
   }
 }

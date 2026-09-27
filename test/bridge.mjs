@@ -105,6 +105,14 @@ try {
   ok('the page receives an open-session frame', pushed, frames.join('').slice(-200))
   ok('the frame names the clicked session', frames.join('').includes('s-live'), frames.join('').slice(-200))
 
+  // a UTF-8 BOM in the body must not silently drop a notification
+  const bomResponse = await fetch('http://127.0.0.1:' + PORT + '/notify', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: '﻿' + JSON.stringify({ kind: 'completed', title: 'bom', sessionId: 's-bom', dryRun: true })
+  })
+  const bom = await bomResponse.json()
+  ok('a body with a UTF-8 BOM is still parsed', bomResponse.status === 200 && bom.ok === true && bom.dryRun === true, JSON.stringify(bom))
+
   // foreign origins are refused
   const foreign = await fetch('http://127.0.0.1:' + PORT + '/notify', {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'https://evil.example' },

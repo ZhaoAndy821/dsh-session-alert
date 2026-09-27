@@ -31,6 +31,31 @@ node scripts/push.mjs --rm        # 卸载：删除热目录里的 bundle（打�
 - 产物只有一个文件：`~/.dsh/hot-plugins/dsh-session-alert/client.js`；不写 DSH 安装目录、不改 profile、不写 localStorage、不写会话数据。
 - 推送后**新打开的页面**会自动挂上；已经打开的页面按下面「已修复的上游缺陷」的说明处理。
 
+### 装进 profile（这样才会出现在「插件」面板里）
+
+DSH Web 的插件面板列的是 **profile 的 bundles / 依赖**；由 dsh-hot-plugin-host 挂进来的热插件是运行时挂载，按设计**不会**出现在那个面板里（页面上只有右下角那枚 hot: dsh-session-alert 胶囊可见）。要让它成为正式安装的插件：
+
+```powershell
+node scripts/build.mjs              # 先生成 lib/client.js（构建产物不入库）
+node scripts/install-profile.mjs    # 写依赖 + dsh.profile.bundles + node_modules 链接
+node scripts/push.mjs --rm          # 撤掉热插件副本：两者同时挂会重复挂载同一个插件
+# 然后重启 dsh web
+```
+
+- 生效需要**一次重启**（与市场插件安装后的提示一致）：bundle 是在启动时合成进插件树的。
+- 脚本等价于官方路径 `dsh plugin --profile web add link:<本仓库>`，但不跑 pnpm，只改 profile 目录里的三处：dependencies、dsh.profile.bundles、node_modules 链接。`--dry-run` 先看计划，`--remove` 撤销。
+- 注册后 `dsh --profile web --dump-config` 里能看到本包的 patch 行（`# == dsh-session-alert`），可用它静态自检。
+- 回滚：`node scripts/install-profile.mjs --remove` 然后再 `node scripts/push.mjs`。
+
+### 两种安装方式的取舍
+
+| | 热插件（push.mjs） | profile bundle（install-profile.mjs） |
+| --- | --- | --- |
+| 出现在插件面板 | 否（设计如此） | 是 |
+| 改代码后生效 | 推一下即可，页面自动重载（偶尔需要刷新一次页面） | 改完要重启 dsh web |
+| 依赖 | 需要有 dsh-hot-plugin-host | 无 |
+| 同时使用 | 会重复挂载同一个插件，二选一 | 同左 |
+
 ## 桌面提醒（原生弹窗 / Windows 通知）
 
 页面内的卡片与横幅只能在浏览器里显示。要让提醒**盖在整个桌面上**（DSH 窗口不在前台时也看得见、不依赖浏览器通知权限），需要第二半：本机回环服务 `desktop/`（`dsh-desktop-alert`）。
@@ -115,7 +140,7 @@ docs/VERIFY.md            人工验收清单
 | `aggregateJobs` | true | 后台任务同理（需要 `jobs` 服务） |
 | `tickMs` | 5000 | 重新求值周期（刷新相对时间、执行收尾兜底） |
 | `desktopAlert` | true | 是否启用原生桌面提醒（需要桥接服务在跑） |
-| `desktopAlertWhen` | `unfocused` | 桌面卡片策略：`unfocused` / `always` / `off` |
+| `desktopAlertWhen` | `always` | 桌面卡片策略：`always` / `unfocused` / `off`；默认 always —— 提醒只针对**非主视图**的会话，人本来就没在看它 |
 | `desktopAlertKinds` | `[completed, waiting]` | 哪些提醒也弹桌面卡片 |
 | `desktopAlertPorts` | `[41411,41412,41413]` | 探活端口顺序（与桥接服务一致） |
 | `desktopAlertRetryMs` | 30000 | 桥接服务不在时的重探周期（ms） |

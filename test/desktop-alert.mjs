@@ -167,8 +167,25 @@ const notified = await until(() => state.notifications.length > 0, 12000)
 ok('a finished session posts a desktop card to the bridge', notified, JSON.stringify(state.notifications))
 const card = state.notifications[0] || {}
 ok('card carries the completion kind and the session id', card.kind === 'completed' && card.sessionId === 's1', JSON.stringify(card))
+ok('an unfocused page raises the card', card.sessionId === 's1', JSON.stringify(card))
 ok('card carries the page url and title for the click fallback', String(card.url).includes('127.0.0.1:4115') && typeof card.windowTitle === 'string', card.url + ' | ' + card.windowTitle)
 ok('card text is the localized completion notice', typeof card.title === 'string' && card.title.length > 0 && String(card.body).includes('Fix sidebar'), card.title + ' / ' + card.body)
+
+// the page now has focus: a reminder for a session that is NOT the main view
+// must still reach the desktop (CONFIG.desktopAlertWhen defaults to "always")
+documentStub.visibilityState = 'visible'
+documentStub.hasFocus = () => true
+rows = { s2: { displayTitle: 'Other session', running: true, origin: 'main', parentId: null, retainedBy: { mainView: false }, blank: false } }
+statuses = { s1: { running: false, completionUnread: true }, s2: { running: true } }
+for (const fn of listSubscribers.slice()) fn()
+for (const fn of statusSubscribers.slice()) fn()
+await until(() => false, 300)
+rows = { s2: { displayTitle: 'Other session', running: false, origin: 'main', parentId: null, retainedBy: { mainView: false }, blank: false } }
+statuses = { s2: { running: false, completionUnread: true } }
+for (const fn of listSubscribers.slice()) fn()
+for (const fn of statusSubscribers.slice()) fn()
+const focusedNotify = await until(() => state.notifications.length > 1, 12000)
+ok('a focused page still raises the desktop card for another session', focusedNotify && state.notifications[1].sessionId === 's2', JSON.stringify(state.notifications))
 
 // the card was clicked: the bridge pushes "open-session" down the stream
 state.sources[0].emit('open-session', { type: 'open-session', sessionId: 's1', at: Date.now() })

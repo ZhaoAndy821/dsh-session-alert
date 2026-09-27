@@ -1,0 +1,12 @@
+# dsh-session-alert bundle patch
+#
+# The `dsh.bundle.patch` layer of this package: the profile merges it at startup,
+# which mounts the (intentionally empty) host half. The client half is loaded by
+# the web app from the `./client` export.
+#
+# The `id` below is the cordis loader row id (a host-side namespace, short name
+# is fine); it is unrelated to the id passed to `__ModuleLoader__.load({ id })`
+# in the client bundle, which must be the package name.
+- insert:
+    - id: session-alert
+      name: 'dsh-session-alert'

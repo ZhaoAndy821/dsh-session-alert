@@ -66,8 +66,17 @@ const CONFIG = {
   systemNotificationKinds: ["completed", "waiting"],
   /** Raise a native desktop card through the local dsh-desktop-alert bridge. */
   desktopAlert: true,
-  /** "unfocused" raises a card only while this page has no focus; else "always" / "off". */
-  desktopAlertWhen: "unfocused",
+  /**
+   * "always" raises a card for every reminder; "unfocused" only while this page
+   * has no focus; "off" disables the desktop half.
+   *
+   * Default is "always": a reminder only exists for a session that is NOT the
+   * main view, so the human is by definition not looking at that session - the
+   * WorkBuddy focus early-return (its main window is the whole product) would
+   * suppress exactly the case this plugin exists for. Set "unfocused" to get
+   * that behaviour back.
+   */
+  desktopAlertWhen: "always",
   /** Reminder kinds that also raise a desktop card. */
   desktopAlertKinds: ["completed", "waiting"],
   /** Loopback ports the bridge may have taken, in probe order. */

@@ -226,7 +226,11 @@ async function readJson(req, limit = 64 * 1024) {
     chunks.push(chunk)
   }
   if (chunks.length === 0) return {}
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+  let text = Buffer.concat(chunks).toString('utf8')
+  // A UTF-8 BOM is legal on the wire and fatal to JSON.parse; strip it (and any
+  // stray leading whitespace) instead of silently dropping one notification.
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1)
+  return JSON.parse(text.trim())
 }
 
 /** Recent notifications, newest last - the CLI and tests read this back. */
