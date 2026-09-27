@@ -105,6 +105,13 @@ try {
   ok('the page receives an open-session frame', pushed, frames.join('').slice(-200))
   ok('the frame names the clicked session', frames.join('').includes('s-live'), frames.join('').slice(-200))
 
+  // a failure gets the red surface without the caller spelling out glyph/accent
+  const failedKind = await (await fetch('http://127.0.0.1:' + PORT + '/notify', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: JSON.stringify({ kind: 'failed', title: 'boom', sessionId: 's-fail', dryRun: true })
+  })).json()
+  ok('a failed notification gets the red card defaults', failedKind.ok === true && failedKind.payload.accent === '#FFEF4444' && failedKind.payload.glyph === '✕', JSON.stringify(failedKind.payload))
+
   // a UTF-8 BOM in the body must not silently drop a notification
   const bomResponse = await fetch('http://127.0.0.1:' + PORT + '/notify', {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },

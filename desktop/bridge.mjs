@@ -102,12 +102,14 @@ function takeSlot() {
 
 /** Normalize whatever the page sent into the payload present.ps1 expects. */
 function normalize(body) {
-  const kind = body.kind === 'waiting' ? 'waiting' : body.kind === 'info' ? 'info' : 'completed'
+  const kind = body.kind === 'waiting' ? 'waiting' : body.kind === 'info' ? 'info' : body.kind === 'failed' ? 'failed' : 'completed'
   const defaults = kind === 'waiting'
     ? { glyph: '\u23F3', accent: '#FFE8A13A' }
     : kind === 'info'
       ? { glyph: '\u2139', accent: '#FF3B82F6' }
-      : { glyph: '\u2713', accent: '#FF22C55E' }
+      : kind === 'failed'
+        ? { glyph: '\u2715', accent: '#FFEF4444' }
+        : { glyph: '\u2713', accent: '#FF22C55E' }
   return {
     kind,
     title: String(body.title || 'DSH'),
