@@ -32,7 +32,7 @@ function until(predicate, timeoutMs, stepMs = 50) {
 }
 
 // ---------------------------------------------------------------- environment
-const state = { requests: [], notifications: [], acks: [], opened: [], sources: [], focused: false }
+const state = { requests: [], notifications: [], acks: [], dismissals: [], opened: [], sources: [], focused: false }
 let listSubscribers = []
 let statusSubscribers = []
 let rows = {}
@@ -51,6 +51,7 @@ async function fakeFetch(url, options) {
   if (target.endsWith('/health')) return { ok: true, status: 200, json: async () => ({ ok: true, service: 'dsh-desktop-alert', port: 41411 }) }
   if (target.endsWith('/notify')) { state.notifications.push(JSON.parse(options.body)); return { ok: true, status: 200, json: async () => ({ ok: true, slot: 0 }) } }
   if (target.endsWith('/ack')) { state.acks.push(JSON.parse(options.body)); return { ok: true, status: 200, json: async () => ({ ok: true }) } }
+  if (target.endsWith('/dismiss')) { state.dismissals.push(JSON.parse(options.body)); return { ok: true, status: 200, json: async () => ({ ok: true, tag: 'dshx' }) } }
   return { ok: false, status: 404, json: async () => ({}) }
 }
 
@@ -186,6 +187,24 @@ for (const fn of listSubscribers.slice()) fn()
 for (const fn of statusSubscribers.slice()) fn()
 const focusedNotify = await until(() => state.notifications.length > 1, 12000)
 ok('a focused page still raises the desktop card for another session', focusedNotify && state.notifications[1].sessionId === 's2', JSON.stringify(state.notifications))
+
+// a pending interaction elsewhere: amber card plus a Windows toast, so the
+// Action Center still holds the reminder when nobody is at the machine
+documentStub.visibilityState = 'hidden'
+rows = { s3: { displayTitle: 'Needs approval', running: false, origin: 'main', parentId: null, retainedBy: { mainView: false }, blank: false } }
+statuses = { s3: { running: false, completionUnread: false, pendingInteraction: { kind: 'approval' } } }
+for (const fn of listSubscribers.slice()) fn()
+for (const fn of statusSubscribers.slice()) fn()
+const waitingPosted = await until(() => state.notifications.length > 2, 12000)
+const waitingCard = state.notifications[2] || {}
+ok('a pending interaction elsewhere posts a waiting card', waitingPosted && waitingCard.kind === 'waiting' && waitingCard.sessionId === 's3', JSON.stringify(waitingCard))
+ok('the waiting card also raises the Action Center toast', waitingCard.surface === 'both', String(waitingCard.surface))
+
+// the human answers: the reminder disappears and its Action Center entry goes too
+statuses = { s3: { running: false, completionUnread: false } }
+for (const fn of statusSubscribers.slice()) fn()
+const dismissed = await until(() => state.dismissals.length > 0, 6000)
+ok('answering clears the Action Center entry', dismissed && state.dismissals[0].sessionId === 's3', JSON.stringify(state.dismissals))
 
 // the card was clicked: the bridge pushes "open-session" down the stream
 state.sources[0].emit('open-session', { type: 'open-session', sessionId: 's1', at: Date.now() })

@@ -56,6 +56,10 @@ $title = [string]$cfg.title
 $body = [string]$cfg.body
 $durationMs = 9000
 if ($cfg.durationMs) { $durationMs = [int]$cfg.durationMs }
+# Windows toasts occupy the same corner; when both surfaces are used the caller
+# asks the card to sit above them instead of behind them.
+$topOffset = 0
+if ($cfg.yOffset) { $topOffset = [int]$cfg.yOffset }
 $font = 'Segoe UI, Microsoft YaHei UI, Malgun Gothic'
 
 $bodyBlock = ''
@@ -195,7 +199,7 @@ $window.Add_ContentRendered({
   $height = $window.ActualHeight
   $area = [System.Windows.SystemParameters]::WorkArea
   $window.Left = $area.Right - $window.Width - 6
-  $window.Top = $area.Bottom - $height - 8 - ($Slot * ($height + 2))
+  $window.Top = $area.Bottom - $height - 8 - $topOffset - ($Slot * ($height + 2))
   if ($window.Top -lt $area.Top) { $window.Top = $area.Top + 8 }
   $fade = New-Object System.Windows.Media.Animation.DoubleAnimation(0, 1, (New-Object System.Windows.Duration([TimeSpan]::FromMilliseconds(200))))
   $window.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)

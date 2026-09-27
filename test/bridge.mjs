@@ -112,6 +112,18 @@ try {
   })).json()
   ok('a failed notification gets the red card defaults', failedKind.ok === true && failedKind.payload.accent === '#FFEF4444' && failedKind.payload.glyph === '✕', JSON.stringify(failedKind.payload))
 
+  // card + toast for one reminder: the card is lifted clear of the toast area
+  const both = await (await fetch('http://127.0.0.1:' + PORT + '/notify', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: JSON.stringify({ kind: 'waiting', title: 'needs you', sessionId: 's-both', surface: 'both', dryRun: true })
+  })).json()
+  ok('card+toast lifts the card above the toast area', both.ok === true && both.payload.yOffset === 140 && both.surfaces.length === 2, JSON.stringify(both.payload.yOffset) + ' / ' + JSON.stringify(both.surfaces))
+  const cardOnly = await (await fetch('http://127.0.0.1:' + PORT + '/notify', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: JSON.stringify({ kind: 'completed', title: 'done', sessionId: 's-cardonly', surface: 'card', dryRun: true })
+  })).json()
+  ok('a card-only reminder is not lifted', cardOnly.ok === true && cardOnly.payload.yOffset === undefined, JSON.stringify(cardOnly.payload.yOffset))
+
   // a completion that follows a failure for the same session is suppressed
   const afterFailure = await (await fetch('http://127.0.0.1:' + PORT + '/notify', {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
@@ -131,6 +143,18 @@ try {
   })
   const bom = await bomResponse.json()
   ok('a body with a UTF-8 BOM is still parsed', bomResponse.status === 200 && bom.ok === true && bom.dryRun === true, JSON.stringify(bom))
+
+  // Action Center cleanup: one stable, session-scoped toast tag
+  const dismissOne = await (await fetch('http://127.0.0.1:' + PORT + '/dismiss', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: JSON.stringify({ sessionId: 'session-9511a32a-c32a-4808-bec7-59ad48bd40ab' })
+  })).json()
+  const dismissTwo = await (await fetch('http://127.0.0.1:' + PORT + '/dismiss', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: JSON.stringify({ sessionId: 'session-27d06715-c620-4808-bb23-65496203a9a3' })
+  })).json()
+  ok('POST /dismiss answers with a session-scoped toast tag', dismissOne.ok === true && String(dismissOne.tag).startsWith('dsh') && String(dismissOne.tag).length <= 16, JSON.stringify(dismissOne))
+  ok('two sessions never share a toast tag', dismissOne.tag !== dismissTwo.tag, dismissOne.tag + ' vs ' + dismissTwo.tag)
 
   // foreign origins are refused
   const foreign = await fetch('http://127.0.0.1:' + PORT + '/notify', {

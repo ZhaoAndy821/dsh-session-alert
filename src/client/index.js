@@ -85,6 +85,16 @@ const CONFIG = {
   desktopAlertRetryMs: 30000,
   /** Bridge surface: "card" (clickable popup), "toast" (Windows notification) or "both". */
   desktopAlertSurface: "card",
+  /**
+   * Per-kind override of the surface above.
+   *
+   * "waiting" gets "both" on purpose: the session is blocked until the human
+   * answers, but a card auto-dismisses after a few seconds. The Windows toast is
+   * the only surface that survives in the Action Center, so a reminder raised
+   * while nobody is at the machine is still there later. The card is kept for the
+   * click that jumps straight to the pending approval/question.
+   */
+  desktopAlertSurfaces: { completed: "card", waiting: "both" },
   /** Hold the completion notice until the session's running subagents settle. */
   aggregateChildren: true,
   /** The same for the session's background jobs (needs the optional jobs service). */
@@ -303,6 +313,20 @@ function createDesktopAlert(options) {
     } catch (err) { log(err); }
   }
 
+  /** Ask the bridge to drop the Action Center entry of one session. */
+  function dismiss(sessionId) {
+    if (stopped || port === 0) return;
+    try {
+      fetch(base() + "/dismiss", {
+        method: "POST",
+        mode: "cors",
+        keepalive: true,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: sessionId })
+      }).catch(function () { /* noop */ });
+    } catch (err) { log(err); }
+  }
+
   /** Tell the bridge the session jump happened (it keeps that as evidence). */
   function ack(sessionId) {
     if (stopped || port === 0) return;
@@ -321,6 +345,7 @@ function createDesktopAlert(options) {
   return {
     notify: notify,
     ack: ack,
+    dismiss: dismiss,
     online: function () { return online; },
     port: function () { return port; },
     stop: function () {
@@ -674,7 +699,7 @@ function createStore(ctx) {
       body: t("notify.body", { name: reminder.title, reason: reminderReason(reminder, t) }),
       hint: t("notify.hint"),
       sessionId: reminder.id,
-      surface: CONFIG.desktopAlertSurface,
+      surface: (CONFIG.desktopAlertSurfaces && CONFIG.desktopAlertSurfaces[kind]) || CONFIG.desktopAlertSurface,
       url: pageUrl(),
       windowTitle: pageTitle(),
       theme: pageTheme()
@@ -749,6 +774,7 @@ function createStore(ctx) {
   function tick() {
     try {
       const rows = listRows();
+      const before = plan.reminders;
       const result = planState(plan, {
         rows: rows,
         statuses: statusSnapshot(),
@@ -757,6 +783,13 @@ function createStore(ctx) {
         config: CONFIG
       });
       plan = result.state;
+      // A waiting interaction that vanished was answered, approved or opened:
+      // its Action Center entry must not outlive the thing it announced.
+      for (const id of Object.keys(before)) {
+        if (plan.reminders[id]) continue;
+        if (!before[id] || !before[id].waiting || !before[id].notified) continue;
+        if (desktop) desktop.dismiss(id);
+      }
       for (const id of Array.from(hidden)) if (!plan.reminders[id]) hidden.delete(id);
       for (const entry of Array.from(timers)) {
         if (plan.reminders[entry[0]]) continue;

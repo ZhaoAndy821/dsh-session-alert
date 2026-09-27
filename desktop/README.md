@@ -95,7 +95,7 @@ nothing ever asks the bridge for a card.
   `com.deepseek.dsh`, so it is attributed to **DeepSeek Harness** with the app
   icon and stays in the Action Center. A script toast cannot carry an activation
   callback, so a toast click does not jump.
-- `both` — both of the above.
+- `both` — both of the above. The card is then lifted by 140 DIP (`yOffset`) so the toast cannot cover the only clickable surface, and the plugin calls `POST /dismiss` once the waiting interaction is answered, so the Action Center does not keep a stale entry.
 
 Set it per notification from the plugin (`CONFIG.desktopAlertSurface` in
 `src/client/index.js`), or pass `--surface` to `cli.mjs test`.
@@ -109,6 +109,7 @@ Set it per notification from the plugin (`CONFIG.desktopAlertSurface` in
 | `POST /notify` | `{ kind, title, body, hint, sessionId, url, windowTitle, theme, durationMs, surface, dryRun }` |
 | `POST /click` | called by the card; answers `{ opened }` (`opened:false` means no page is connected, so the card falls back to the URL) |
 | `POST /ack` | the page confirming it executed the jump (recorded in the log) |
+| `POST /dismiss` | `{ sessionId }` - remove that session's Action Center toast (`dsh` + 13 chars tag); called when a waiting interaction is answered |
 | `GET /recent` | the last 50 notifications |
 | `POST /quit` | clean shutdown |
 

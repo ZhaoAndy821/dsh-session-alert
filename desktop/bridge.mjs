@@ -125,15 +125,29 @@ function normalize(body) {
   }
 }
 
-/** Raise one native Windows toast (attributed to the DSH app id). */
-function showToast(payload) {
+/**
+ * Short, stable toast tag for one session: Windows caps a tag at 16 characters
+ * and the removal call must produce the same string.
+ */
+function toastTag(sessionId) {
+  const compact = String(sessionId || '').replace(/[^A-Za-z0-9]/g, '')
+  return ('dsh' + compact.slice(0, 13)) || 'dsh-desktop-alert'
+}
+
+/** Raise (or remove) one native Windows toast, attributed to the DSH app id. */
+function showToast(payload, remove) {
   sequence += 1
-  const payloadPath = path.join(TMP, 'toast-' + process.pid + '-' + sequence + '.json')
-  fs.writeFileSync(payloadPath, JSON.stringify({ appId: payload.appId, title: payload.title, body: payload.body }, null, 2), 'utf8')
+  const payloadPath = path.join(TMP, (remove ? 'untoast-' : 'toast-') + process.pid + '-' + sequence + '.json')
+  fs.writeFileSync(payloadPath, JSON.stringify({
+    appId: payload.appId,
+    title: payload.title,
+    body: payload.body,
+    tag: toastTag(payload.sessionId)
+  }, null, 2), 'utf8')
   const child = spawn(powershellExe(), [
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
     '-File', TOASTER, '-Payload', payloadPath
-  ], { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
+  ].concat(remove ? ['-Remove'] : []), { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
   let stderr = ''
   child.stderr.on('data', (chunk) => { if (stderr.length < 2000) stderr += String(chunk) })
   child.on('exit', (code) => {
@@ -142,7 +156,7 @@ function showToast(payload) {
     log('toast done code=' + code + ' session=' + (payload.sessionId || '-'))
   })
   child.on('error', (err) => log('toast spawn failed: ' + (err && err.message ? err.message : String(err))))
-  log('toast shown kind=' + payload.kind + ' session=' + (payload.sessionId || '-'))
+  log((remove ? 'toast removed' : 'toast shown') + ' kind=' + payload.kind + ' session=' + (payload.sessionId || '-'))
 }
 
 /** Which surfaces one notification should use. */
@@ -315,6 +329,9 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, { ok: true, suppressed: 'after-failure' })
       }
       if (payload.sessionId) lastBySession.set(payload.sessionId, { kind: payload.kind, at: now })
+      // A toast and a card land in the same corner; without this the toast hides
+      // the clickable card for the first seconds, exactly when the eye arrives.
+      if (surfaces.indexOf('card') >= 0 && surfaces.indexOf('toast') >= 0 && !payload.yOffset) payload.yOffset = 140
       if (body.dryRun === true) return json(res, 200, { ok: true, dryRun: true, surfaces, payload })
       const slot = surfaces.indexOf('card') >= 0 ? showCard(payload) : null
       if (surfaces.indexOf('toast') >= 0) showToast(payload)
@@ -329,6 +346,16 @@ const server = http.createServer(async (req, res) => {
       if (delivered) broadcast({ type: 'open-session', sessionId, at: Date.now() })
       log('card click session=' + (sessionId || '-') + ' pages=' + pages.size + ' delivered=' + delivered)
       return json(res, 200, { ok: true, opened: delivered, url: delivered ? '' : String(body.url || '') })
+    }
+
+    if (req.method === 'POST' && url.pathname === '/dismiss') {
+      // The page calls this when a waiting interaction is answered: the Action
+      // Center entry for that session must not outlive the thing it announced.
+      const body = await readJson(req)
+      const sessionId = body.sessionId ? String(body.sessionId) : ''
+      showToast({ kind: 'dismiss', sessionId, title: '', body: '' }, true)
+      log('toast dismissal requested session=' + (sessionId || '-'))
+      return json(res, 200, { ok: true, tag: toastTag(sessionId) })
     }
 
     if (req.method === 'POST' && url.pathname === '/ack') {
