@@ -49,6 +49,11 @@ node desktop/cli.mjs status / logs      # 看状态 / 看日志
 - 只在页面不在前台时弹（与 Z-Code WorkBuddy 的 `mainWindow.isFocused()` 判定同构）；服务没起来时，侧边栏卡片区会显示一行「桌面提醒服务未启动」。
 - 设计、接口与取舍（含从 WorkBuddy `main/index.js` 的 `showTaskNotification` 学到什么）见 [`desktop/README.md`](desktop/README.md)。
 
+![DSH 桌面提醒卡片](docs/images/desktop-alert-card.png)
+
+_置顶卡片实录：不出现在任务栏、不抢焦点，9 秒后自动淡出；点一下 → 已打开的 DSH 标签页原地跳到该会话（不再新开窗口）。_
+
+
 ## 测试
 
 ```powershell

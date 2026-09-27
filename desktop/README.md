@@ -47,6 +47,11 @@ service, and that service owns both native surfaces.
   focus), bottom-right of the work area, fades in, auto-closes after
   `durationMs` (9 s default), pauses while hovered, closes on the close glyph.
 
+![The always-on-top card](../docs/images/desktop-alert-card.png)
+
+_The card as it actually renders: no taskbar entry, no focus steal, and a click
+jumps the open DSH tab to that session._
+
 ## Install
 
 ```powershell
