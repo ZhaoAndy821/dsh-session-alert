@@ -15,14 +15,64 @@
  *
  * Failure flapping (an unstable connection retrying every few seconds) is
  * rate-limited per session so one bad link cannot turn into a card storm.
+ *
+ * It also supervises the bridge from here. The bridge died once with no trace
+ * and nothing restarted it (the logon shortcut only fires at logon), so the host
+ * - which is alive exactly while the human is working - brings it back: one
+ * check at load, then every few minutes. A standalone supervisor
+ * (desktop/supervise.mjs) covers the same ground when the harness is not running;
+ * both probe /health first, and the bridge refuses to bind twice, so they cannot
+ * fight over the port.
  */
+import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
 const BRIDGE_PORTS = [41411, 41412, 41413]
+const WATCHDOG_MS = 5 * 60 * 1000
+const SPAWN_COOLDOWN_MS = 60 * 1000
 const RATE_LIMIT_MS = 60 * 1000
 const BODY_LIMIT = 180
 
 /** Session id -> wall-clock ms of the last card we raised for it. */
 const lastSentAt = new Map()
 let resolvedPort = 0
+let lastSpawnAt = 0
+
+const HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
+
+/** Where the bridge script lives: the installed runtime first, the package second. */
+function bridgeScript() {
+  const installed = path.join(HOME, 'desktop-alert', 'bridge.mjs')
+  if (fs.existsSync(installed)) return installed
+  const shipped = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'desktop', 'bridge.mjs')
+  return fs.existsSync(shipped) ? shipped : ''
+}
+
+/** Bring the bridge up when it is not answering; never throws, never storms. */
+async function ensureBridge() {
+  try {
+    if (await findBridge()) return true
+    if (Date.now() - lastSpawnAt < SPAWN_COOLDOWN_MS) return false
+    const script = bridgeScript()
+    if (!script) { log('bridge script not found; desktop reminders stay off'); return false }
+    lastSpawnAt = Date.now()
+    const child = spawn(process.execPath, [script], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      cwd: path.dirname(script)
+    })
+    child.unref()
+    log('desktop bridge was not running - started it (pid ' + (child.pid || '?') + ')')
+    return true
+  } catch (error) {
+    log('could not ensure the bridge: ' + (error && error.message ? error.message : String(error)))
+    return false
+  }
+}
 
 function log(message) {
   try { console.warn('[dsh-session-alert] ' + message) } catch { /* logging must never break the host */ }
@@ -77,6 +127,20 @@ async function notifyFailure(sessionId, message) {
  * @param ctx - cordis context of the host process.
  */
 export function apply(ctx) {
+  // Supervision first: a failure reminder is useless if the bridge is down.
+  void ensureBridge()
+  try {
+    if (ctx && typeof ctx.effect === 'function') {
+      ctx.effect(() => {
+        const timer = setInterval(() => { void ensureBridge() }, WATCHDOG_MS)
+        return () => clearInterval(timer)
+      }, 'dsh-session-alert: bridge watchdog')
+    } else {
+      setInterval(() => { void ensureBridge() }, WATCHDOG_MS)
+    }
+  } catch (error) {
+    log('watchdog could not start: ' + (error && error.message ? error.message : String(error)))
+  }
   if (!ctx || typeof ctx.on !== 'function') {
     log('host context cannot subscribe to api-session/error; failure reminders are off')
     return

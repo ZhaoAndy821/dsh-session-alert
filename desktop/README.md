@@ -77,7 +77,8 @@ nothing ever asks the bridge for a card.
 | command | what it does |
 | --- | --- |
 | `node cli.mjs install` | copy `bridge.mjs`, `present.ps1`, `toast.ps1`, `cli.mjs` into `~/.dsh/desktop-alert` |
-| `node cli.mjs start` / `stop` / `status` | background lifecycle; `status` prints the live `/health` JSON |
+| `node cli.mjs start` / `stop` / `status` | background lifecycle; `status` prints the live `/health` JSON and whether a supervisor is alive |
+| `node cli.mjs supervise` | run the supervisor loop in the foreground (`supervise.mjs`: probes `/health` every 30 s and restarts a dead bridge). The autostart shortcut points here |
 | `node cli.mjs test [--kind waiting] [--surface toast]` | raise one card or toast without any DSH page |
 | `node cli.mjs logs [--lines 40]` | tail `~/.dsh/desktop-alert/bridge.log` |
 | `node cli.mjs install-autostart` / `uninstall-autostart` | Startup-folder shortcut (`DSH Desktop Alert.lnk`, window style 7) |

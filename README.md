@@ -76,6 +76,7 @@ node desktop/cli.mjs status / logs      # 看状态 / 看日志
 - **Windows 通知（`--surface toast`）**：以 AUMID `com.deepseek.dsh` 发出真正的系统通知，署名即 **DeepSeek Harness**（带应用图标），并留在操作中心；脚本发出的 toast 拿不到点击回调，所以它不能跳转。
 - **卡片停靠在侧栏底部**：提醒卡片是侧栏流式布局的一部分（不是浮层），宿主会把列表区域按卡片高度压缩，所以不会盖住成本面板或会话列表。
 - **失败也提醒（红色）**：连接不稳、接口报错、prompt 被拒这类「没有 turn 边界」的失败，浏览器侧看不到（宿主只发 `api-session/error`，不保证有 running→stopped 的状态迁移），所以由**宿主半边** `host/index.js` 订阅该事件后直接投给桥接服务 —— 页面关着也能提醒。卡片是红色 ✕，正文就是失败原因；同一个会话 60 秒内只弹一张（避免断线重连刷屏），并且失败后 8 秒内该会话的「已完成」卡片会被压掉 —— 失败才是真相。
+- **服务会被守着**：`desktop/supervise.mjs` 每 30 秒探一次 `/health`，挂了就拉起来（登录自启的快捷方式现在指向它，不再是那个只启动一次就完事的 bridge）；DSH 宿主半边也会在启动时和每 5 分钟兜一次底。之前桥接进程曾无声死掉、没人管，提醒就此整体失效——这是修它的原因。
 - 只在页面不在前台时弹（与 Z-Code WorkBuddy 的 `mainWindow.isFocused()` 判定同构）；服务没起来时，侧边栏卡片区会显示一行「桌面提醒服务未启动」。
 - 设计、接口与取舍（含从 WorkBuddy `main/index.js` 的 `showTaskNotification` 学到什么）见 [`desktop/README.md`](desktop/README.md)。
 

@@ -25,6 +25,34 @@ const RUNTIME = process.env.DSH_DESKTOP_ALERT_DIR || path.join(HOME, 'desktop-al
 const PORTS = [41411, 41412, 41413]
 const STARTUP = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
 const SHORTCUT = path.join(STARTUP, 'DSH Desktop Alert.lnk')
+const SUPERVISOR_PID = path.join(RUNTIME, 'supervisor.pid')
+
+/** Stop a supervisor we started, so 'stop' really stops the service. */
+function stopSupervisor() {
+  if (!fs.existsSync(SUPERVISOR_PID)) return false
+  const pid = Number(fs.readFileSync(SUPERVISOR_PID, 'utf8').trim())
+  if (!pid) { fs.rmSync(SUPERVISOR_PID, { force: true }); return false }
+  try {
+    process.kill(pid, 0)                      // throws when the process is gone
+    process.kill(pid, 'SIGTERM')
+    fs.rmSync(SUPERVISOR_PID, { force: true })
+    console.log('stopped the supervisor (pid ' + pid + ')')
+    return true
+  } catch {
+    fs.rmSync(SUPERVISOR_PID, { force: true })  // stale file
+    return false
+  }
+}
+
+/** Is a supervisor alive right now? */
+function supervisorAlive() {
+  try {
+    const pid = Number(fs.readFileSync(SUPERVISOR_PID, 'utf8').trim())
+    if (!pid) return 0
+    process.kill(pid, 0)
+    return pid
+  } catch { return 0 }
+}
 const argv = process.argv.slice(2)
 const command = argv[0] || 'status'
 const flag = (name, fallback) => {
@@ -62,7 +90,7 @@ async function post(route, payload) {
 }
 
 /** Files that make up the installed runtime. */
-const FILES = ['bridge.mjs', 'present.ps1', 'toast.ps1', 'cli.mjs', 'README.md', 'WORKBUDDY-NOTES.md']
+const FILES = ['bridge.mjs', 'supervise.mjs', 'present.ps1', 'toast.ps1', 'cli.mjs', 'README.md', 'WORKBUDDY-NOTES.md']
 
 function install() {
   fs.mkdirSync(RUNTIME, { recursive: true })
@@ -97,8 +125,13 @@ function start() {
 }
 
 function installAutostart() {
-  const entry = path.join(RUNTIME, 'bridge.mjs')
-  const target = fs.existsSync(entry) ? entry : path.join(HERE, 'bridge.mjs')
+  // The shortcut starts the SUPERVISOR, not the bridge: a bridge that dies (it
+  // did once, silently) is then restarted instead of staying dead until logon.
+  const supervisor = path.join(RUNTIME, 'supervise.mjs')
+  const bridge = path.join(RUNTIME, 'bridge.mjs')
+  const target = fs.existsSync(supervisor)
+    ? supervisor
+    : (fs.existsSync(bridge) ? bridge : path.join(HERE, 'supervise.mjs'))
   fs.mkdirSync(STARTUP, { recursive: true })
   // PowerShell single-quoted literals: double quotes inside a -Command string
   // are parsed by PowerShell itself, so JSON quoting would corrupt the script.
@@ -137,12 +170,26 @@ switch (command) {
   case 'install': install(); break
   case 'start': process.exit(await start()); break
   case 'stop': {
+    stopSupervisor()
     try { console.log(JSON.stringify((await post('/quit', {})).body)) } catch (err) { console.error(String(err.message || err)) }
+    break
+  }
+  case 'supervise': {
+    // Foreground loop: keeps the bridge alive and logs every start decision.
+    const { runSupervisor, probe: probeBridge, spawnBridge } = await import('./supervise.mjs')
+    await runSupervisor({
+      check: () => probeBridge(),
+      spawn: () => spawnBridge(),
+      checkMs: Number(flag('--check-ms', '30000')) || 30000
+    })
     break
   }
   case 'status': {
     const live = await health()
     console.log(live ? JSON.stringify(live.body, null, 2) : 'bridge is not running')
+    const pid = supervisorAlive()
+    console.log(pid ? 'supervisor: alive (pid ' + pid + ')' : 'supervisor: not running (a crash would not self-heal)')
+    if (fs.existsSync(SUPERVISOR_PID) && !pid) console.log('note: stale ' + SUPERVISOR_PID)
     break
   }
   case 'test': {
@@ -167,6 +214,7 @@ switch (command) {
   case 'install-autostart': installAutostart(); break
   case 'uninstall-autostart': uninstallAutostart(); break
   case 'uninstall': {
+    stopSupervisor()
     try { await post('/quit', {}) } catch { /* it may already be down */ }
     uninstallAutostart()
     if (fs.existsSync(RUNTIME)) { fs.rmSync(RUNTIME, { recursive: true, force: true }); console.log('removed ' + RUNTIME) }
@@ -174,5 +222,5 @@ switch (command) {
   }
   default:
     console.log('unknown command: ' + command)
-    console.log('install | start | stop | status | test | logs | install-autostart | uninstall-autostart | uninstall')
+    console.log('install | start | stop | supervise | status | test | logs | install-autostart | uninstall-autostart | uninstall')
 }

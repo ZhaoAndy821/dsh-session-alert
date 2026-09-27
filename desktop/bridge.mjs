@@ -24,6 +24,7 @@
  *
  * Runtime layout (installed copy):
  *   ~/.dsh/desktop-alert/bridge.mjs        this file
+ *   ~/.dsh/desktop-alert/supervise.mjs     keeps this process alive
  *   ~/.dsh/desktop-alert/present.ps1       the native card
  *   ~/.dsh/desktop-alert/bridge.log        append-only log (rotated at 512 KB)
  *   ~/.dsh/desktop-alert/tmp/*.json        one payload file per visible card
@@ -439,10 +440,28 @@ if (!bound) {
 }
 
 fs.writeFileSync(path.join(RUNTIME, 'bridge.pid'), String(process.pid), 'utf8')
+// One file that answers "which port, which pid, since when" without guessing.
+fs.writeFileSync(path.join(RUNTIME, 'endpoint.json'), JSON.stringify({
+  service: SERVICE,
+  version: VERSION,
+  port: bound,
+  pid: process.pid,
+  startedAt: new Date().toISOString()
+}, null, 2) + '\n', 'utf8')
 log('bridge listening on http://127.0.0.1:' + bound + ' (pid ' + process.pid + ', maxCards ' + MAX_CARDS + ')')
 console.log(JSON.stringify({ ok: true, listening: bound, pid: process.pid, service: SERVICE, version: VERSION }))
 
 process.on('SIGINT', () => shutdown(0))
 process.on('SIGTERM', () => shutdown(0))
-process.on('uncaughtException', (err) => log('uncaught: ' + (err && err.stack ? err.stack : String(err))))
+process.on('uncaughtException', (err) => {
+  // An uncaught exception must not look like the silent death of 03:19.
+  log('uncaught: ' + (err && err.stack ? err.stack : String(err)))
+  try { fs.rmSync(path.join(RUNTIME, 'bridge.pid'), { force: true }) } catch { /* ignore */ }
+  process.exit(1)
+})
+process.on('unhandledRejection', (reason) => log('unhandled rejection: ' + String(reason)))
+process.on('exit', (code) => {
+  log('bridge exiting (code ' + code + ') - a running supervisor restarts it')
+  try { fs.rmSync(path.join(RUNTIME, 'endpoint.json'), { force: true }) } catch { /* ignore */ }
+})
 //#endregion
