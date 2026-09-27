@@ -43,6 +43,10 @@ const SHIPPED_PORTS = [41411, 41412, 41413]
 /** Rounds of the F1 race; >1 because one round can pass on the pre-fix code. */
 const ROUNDS = 4
 const runtime = mkdtempSync(path.join(tmpdir(), 'dsh-singleton-'))
+// Clean up even when the run aborts before its own cleanup.
+process.on('exit', () => {
+  try { rmSync(runtime, { recursive: true, force: true }) } catch { /* best effort */ }
+})
 const results = []
 const ok = (name, pass, detail) => results.push({ name, pass, detail })
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))

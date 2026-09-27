@@ -118,6 +118,7 @@ npm test                                        # 全量 125 项：10 / 16 / 25 
 - 窄栏（56px rail）未读角标、提示音未实现。
 - 只用 DSH 客户端公开事实：`uiSession.sessionStatus`、`sessions.list.byId[].retainedBy.mainView`、`uiWorkspace.openSession`、可选的 `jobs` 服务；DSH 升级后请重跑 `test/smoke.mjs` 与 `test/browser-check.mjs` 回归。
 - 旧的、曾用已删除 provider 的会话仍会显示它们当时选的模型（那是会话自身的历史），需要在该会话里重新选一次模型。
+- 桌面提醒侧的细枝末节（启动竞争窗口、探活等待、宿主路径、pid 判活、依赖未锁版本等）：见 [docs/KNOWN-LIMITS.md](docs/KNOWN-LIMITS.md)，每条都写了触发条件与修法。
 
 ## 仓库结构
 
@@ -135,6 +136,7 @@ desktop/toast.ps1         Windows 通知（WinRT，AUMID com.deepseek.dsh）
 desktop/cli.mjs           install / start / stop / status / test / logs / autostart
 desktop/README.md         桌面提醒的设计、接口、排错
 docs/VERIFY.md            人工验收清单
+docs/KNOWN-LIMITS.md      已知限制与待办细节（不影响功能）
 ```
 
 ## 配置速查（src/client/index.js → CONFIG）

@@ -24,6 +24,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const BRIDGE = path.join(HERE, '..', 'desktop', 'bridge.mjs')
 const PORT = 41499
 const runtime = mkdtempSync(path.join(tmpdir(), 'dsh-alert-test-'))
+// An aborting run (the self-guard below, or any unexpected throw) skips the normal
+// cleanup and used to leave this directory behind in %TEMP% - measured, 17 of them
+// accumulated. Remove it on exit too.
+process.on('exit', () => {
+  try { rmSync(runtime, { recursive: true, force: true }) } catch { /* best effort */ }
+})
 const results = []
 const ok = (name, pass, detail) => results.push({ name, pass, detail })
 

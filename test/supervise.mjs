@@ -30,7 +30,19 @@ const REPO = path.join(HERE, '..')
 const results = []
 const ok = (name, pass, detail) => results.push({ name, pass, detail })
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-const tempDir = (prefix) => mkdtempSync(path.join(tmpdir(), prefix))
+const scratchDirs = []
+// Scratch directories are removed on exit as well, so an aborting run cannot leave
+// them behind in %TEMP% (measured: they accumulated across review rounds).
+process.on('exit', () => {
+  for (const dir of scratchDirs) {
+    try { rmSync(dir, { recursive: true, force: true }) } catch { /* best effort */ }
+  }
+})
+const tempDir = (prefix) => {
+  const dir = mkdtempSync(path.join(tmpdir(), prefix))
+  scratchDirs.push(dir)
+  return dir
+}
 
 /** The path a loop without an injected pidPath would use: the real runtime. */
 const defaultPid = path.join(
@@ -94,7 +106,7 @@ ok('the startup line logs the normalised retry window it uses (0 is not swallowe
 rmSync(retryDir, { recursive: true, force: true })
 
 // --- F2: ownership lives in the loop, so 'cli supervise' is guarded too
-const ownDir = mkdtempSync(path.join(tmpdir(), 'dsh-own-'))
+const ownDir = tempDir('dsh-own-')
 const ownPid = path.join(ownDir, 'supervisor.pid')
 const owned = await runSupervisor({ check: async () => 41411, spawn: () => 0, log: () => {}, sleep: async () => {}, rounds: 1, pidPath: ownPid })
 ok('the loop publishes its own pid file', owned === true && existsSync(ownPid) && readFileSync(ownPid, 'utf8').trim() === String(process.pid), String(existsSync(ownPid)))
