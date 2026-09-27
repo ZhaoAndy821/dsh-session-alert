@@ -1,0 +1,67 @@
+{
+  "name": "dsh-session-alert",
+  "version": "0.2.0",
+  "private": true,
+  "description": "DSH client plugin: session reminders when a task finishes or waits for you - sidebar cards, top banner, browser notification, plus native desktop popups / Windows toasts through a loopback bridge.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZhaoAndy821/dsh-session-alert.git"
+  },
+  "homepage": "https://github.com/ZhaoAndy821/dsh-session-alert#readme",
+  "bugs": {
+    "url": "https://github.com/ZhaoAndy821/dsh-session-alert/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "client-plugin",
+    "hot-plugin",
+    "notification",
+    "desktop-notification",
+    "windows-toast"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "push": "node scripts/push.mjs",
+    "status": "node scripts/push.mjs --status",
+    "rm": "node scripts/push.mjs --rm",
+    "test": "node scripts/build.mjs && node test/smoke.mjs && node test/desktop-alert.mjs && node test/bridge.mjs",
+    "test:model": "node test/smoke.mjs",
+    "test:client": "node test/desktop-alert.mjs",
+    "test:bridge": "node test/bridge.mjs",
+    "desktop:install": "node desktop/cli.mjs install",
+    "desktop:start": "node desktop/cli.mjs start",
+    "desktop:stop": "node desktop/cli.mjs stop",
+    "desktop:status": "node desktop/cli.mjs status",
+    "desktop:test": "node desktop/cli.mjs test",
+    "desktop:autostart": "node desktop/cli.mjs install-autostart",
+    "desktop:uninstall": "node desktop/cli.mjs uninstall"
+  },
+  "files": [
+    "lib",
+    "src",
+    "scripts",
+    "desktop",
+    "docs",
+    "test",
+    "README.md"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "client": {
+      "platform": "web",
+      "inject": [
+        "sessions",
+        "slots",
+        "locale",
+        "uiSession",
+        "uiWorkspace"
+      ]
+    }
+  }
+}
