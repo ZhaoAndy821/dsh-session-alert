@@ -973,9 +973,7 @@ function CardStack(props) {
   }
   return h("div", {
     className: "dsa-cards" + (props.docked ? " dsa-cards--docked" : ""),
-    style: props.docked
-      ? { width: props.dockWidth > 0 ? props.dockWidth + "px" : "100%" }
-      : cardStackStyle(props.box, props.wide)
+    style: props.docked ? undefined : cardStackStyle(props.box, props.wide)
   }, children);
 }
 
@@ -1004,15 +1002,19 @@ function CardAnchor(props) {
    *
    * The seat is rendered by the shell's own bottom strip, so the nearest footer
    * ancestor is that strip, not the sidebar column: the stack is docked there as
-   * a real layout participant (the strip grows, nothing is covered) and its width
-   * is pinned to the measured sidebar column so the cards keep their size and
-   * left alignment. No pixel offset has to be guessed.
+   * a real layout participant and sized by the holder itself
+   * (.dsa-dock{width:100%} + .dsa-cards--docked{width:auto}), so no box has to be
+   * measured and no pixel offset guessed.
    */
   react.useLayoutEffect(function () {
     const element = seatRef.current;
     if (!element || wide === false || typeof document === "undefined") { setDock(null); return undefined; }
     const footer = typeof element.closest === "function" ? element.closest('[class*="_footArea"]') : null;
     if (!footer) { setDock(null); return undefined; }
+    // The shell keeps reporting wide = true for ~150ms after collapsing, while
+    // the footer is still the 56px rail; docking there would squeeze the cards.
+    const footerBox = typeof footer.getBoundingClientRect === "function" ? footer.getBoundingClientRect() : null;
+    if (!footerBox || footerBox.width < 160) { setDock(null); return undefined; }
     const holder = document.createElement("div");
     holder.className = "dsa-dock";
     footer.insertBefore(holder, footer.firstChild);
@@ -1046,7 +1048,7 @@ function CardAnchor(props) {
   const deck = snapshot.desktop || { enabled: false, online: true, port: 0 };
   const offlineHint = deck.enabled === true && deck.online === false;
   const stack = (snapshot.reminders.length > 0 || offlineHint)
-    ? portal(h(CardStack, {
+    ? h(CardStack, {
       reminders: snapshot.reminders,
       more: snapshot.more,
       permission: snapshot.permission,
@@ -1056,15 +1058,18 @@ function CardAnchor(props) {
       box: box,
       wide: wide,
       docked: dock !== null,
-      dockWidth: box ? Math.round(box.width) : 0,
       t: t,
       actions: actions
-    }))
+    })
     : null;
 
+  // Exactly one portal. A portal element renders its children into its own
+  // container, so wrapping an already-portalled stack in a second portal leaves
+  // the outer container empty and silently mounts the stack into <body> - the
+  // dock would exist, stay empty, and the cards would fall below the app.
   return h(react.Fragment, null,
     h("div", { ref: seatRef, className: "dsa-anchor", "aria-hidden": "true" }),
-    stack === null ? null : (dock ? portal(stack, dock) : portal(stack)));
+    stack === null ? null : portal(stack, dock || undefined));
 }
 
 /** Seat B: the top-center banner stack. */

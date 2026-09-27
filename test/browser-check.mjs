@@ -119,6 +119,10 @@ try {
   const facts = await page.evaluate(() => ({
     style: !!document.querySelector('style[data-plugin-css="dsh-session-alert/styles.css"]'),
     anchor: !!document.querySelector('.dsa-anchor'),
+    dock: !!document.querySelector('.dsa-dock'),
+    // A stack mounted straight into <body> is the failure this guards: a second
+    // portal used to leave the dock empty and drop the stack below the app.
+    strayStack: !!document.querySelector('body > .dsa-cards'),
     cards: document.querySelectorAll('.dsa-card').length,
     banners: document.querySelectorAll('.dsa-banner').length,
     title: document.title
@@ -126,6 +130,7 @@ try {
 
   assert.equal(facts.style, true, 'plugin stylesheet missing: apply() did not run')
   assert.equal(facts.anchor, true, 'sidebar.footer.action seat not rendered')
+  assert.equal(facts.strayStack, false, 'the card stack was portalled into <body> instead of the sidebar dock')
   assert.deepEqual(consoleErrors.filter(mine), [], 'plugin logged console errors')
   assert.deepEqual(pageErrors.filter(mine), [], 'plugin threw in the page')
   console.log('structure ok: ' + JSON.stringify(facts))
@@ -178,6 +183,28 @@ async function stage(page) {
   }))
   assert.ok(surface.banners >= 1, 'no completion banner appeared')
   assert.ok(surface.cards >= 1, 'no sidebar card appeared')
+
+  // "A card exists" cannot catch a stack that fell out of the sidebar: Playwright
+  // scrolls it into view either way. Assert where it actually is (review finding,
+  // 2026-09-27).
+  const docked = await page.evaluate(() => {
+    const dock = document.querySelector('.dsa-dock')
+    const card = document.querySelector('.dsa-card')
+    const anchor = document.querySelector('.dsa-anchor')
+    const column = anchor ? anchor.closest('[class*="_root"]') : null
+    if (!dock || !card) return { inDock: false, insideColumn: null, reason: !dock ? 'no dock element' : 'no card element' }
+    const rect = card.getBoundingClientRect()
+    const columnRect = column ? column.getBoundingClientRect() : null
+    return {
+      inDock: dock.contains(card),
+      insideColumn: columnRect === null ? null : (rect.left >= columnRect.left - 2 && rect.right <= columnRect.right + 2),
+      left: Math.round(rect.left),
+      right: Math.round(rect.right)
+    }
+  })
+  assert.equal(docked.inDock, true, 'the card stack is not inside the sidebar dock: ' + JSON.stringify(docked))
+  assert.notEqual(docked.insideColumn, false, 'the card stack overhangs the sidebar column: ' + JSON.stringify(docked))
+  console.log('stage: dock placement: ' + JSON.stringify(docked))
   console.log('stage: surfaces appeared: ' + JSON.stringify(surface))
 
   await page.click('.dsa-card')
