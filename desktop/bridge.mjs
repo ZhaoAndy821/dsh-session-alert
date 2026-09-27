@@ -40,6 +40,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { redactLine } from './redact.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
@@ -195,7 +196,9 @@ function showCard(payload) {
     log('card closed slot=' + slot + ' code=' + code + ' session=' + (card.sessionId || '-'))
   })
   child.on('error', (err) => log('presenter spawn failed: ' + (err && err.message ? err.message : String(err))))
-  log('card shown slot=' + slot + ' kind=' + card.kind + ' session=' + (card.sessionId || '-') + ' title=' + card.title)
+  // Collapse whitespace: a newline inside a title would push the rest onto a
+  // continuation line that a line-oriented redactor cannot mask.
+  log('card shown slot=' + slot + ' kind=' + card.kind + ' session=' + (card.sessionId || '-') + ' title=' + String(card.title).replace(/\s+/g, ' '))
   return slot
 }
 //#endregion
@@ -317,7 +320,9 @@ const server = http.createServer(async (req, res) => {
       const key = payload.kind + ':' + payload.sessionId + ':' + payload.title
       const now = Date.now()
       if (key === lastFire.key && now - lastFire.at < 2500) {
-        log('deduplicated repeat notify ' + key)
+        // Never log the composite key: it is kind:sessionId:title, and that line
+        // is exactly the shape a redactor cannot safely guess at.
+        log('deduplicated repeat notify kind=' + payload.kind + ' session=' + (payload.sessionId || '-'))
         return json(res, 200, { ok: true, deduplicated: true })
       }
       lastFire = { key, at: now }
@@ -366,6 +371,9 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && url.pathname === '/recent') {
+      // Notification history carries session titles and ids. Nothing needs it at
+      // runtime, so it exists only when the operator asked for diagnostics.
+      if (!VERBOSE) return json(res, 404, { ok: false, error: 'not found' })
       return json(res, 200, { ok: true, recent })
     }
 
@@ -378,7 +386,13 @@ const server = http.createServer(async (req, res) => {
 
     return json(res, 404, { ok: false, error: 'not found' })
   } catch (err) {
-    log('request failed ' + url.pathname + ': ' + (err && err.message ? err.message : String(err)))
+    // Node's JSON.parse message quotes a snippet of the offending body; that
+    // snippet is request content and has no business in a log file. Run the whole
+    // line through the redactor rather than a second, weaker quote rule here: the
+    // snippet is printed verbatim, so the body's own quote closes a plain character
+    // class early and everything after it survives (a review reproduced exactly
+    // that in the raw log).
+    log(redactLine('request failed ' + url.pathname + ': ' + String(err && err.message ? err.message : err)))
     return json(res, 400, { ok: false, error: err && err.message ? err.message : String(err) })
   }
 })

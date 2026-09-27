@@ -30,7 +30,7 @@
  * usage: node test/singleton.mjs
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -91,6 +91,12 @@ function bridgeCopyWithPorts(list, file) {
     throw new Error('port-list rewrite did not take effect; refusing to start bridges on the shipped ports')
   }
   writeFileSync(file, patched, 'utf8')
+  // The bridge imports its siblings; a copy without them cannot start at all
+  // (the first run of this test after redact.mjs was introduced proved it).
+  for (const sibling of readdirSync(path.dirname(BRIDGE))) {
+    if (!sibling.endsWith('.mjs') || sibling === path.basename(BRIDGE)) continue
+    copyFileSync(path.join(path.dirname(BRIDGE), sibling), path.join(path.dirname(file), sibling))
+  }
   return file
 }
 

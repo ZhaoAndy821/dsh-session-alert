@@ -76,11 +76,11 @@ nothing ever asks the bridge for a card.
 
 | command | what it does |
 | --- | --- |
-| `node cli.mjs install` | copy `bridge.mjs`, `present.ps1`, `toast.ps1`, `cli.mjs` into `~/.dsh/desktop-alert` |
+| `node cli.mjs install` | copy all eight shipped files into `~/.dsh/desktop-alert`: `bridge.mjs`, `supervise.mjs`, `redact.mjs`, `present.ps1`, `toast.ps1`, `cli.mjs`, `README.md`, `WORKBUDDY-NOTES.md` |
 | `node cli.mjs start` / `stop` / `status` | background lifecycle; `status` prints the live `/health` JSON and whether a supervisor is alive |
 | `node cli.mjs supervise` | run the supervisor loop in the foreground (`supervise.mjs`: probes `/health` every 30 s and restarts a dead bridge). The autostart shortcut points here |
 | `node cli.mjs test [--kind waiting] [--surface toast]` | raise one card or toast without any DSH page |
-| `node cli.mjs logs [--lines 40]` | tail `~/.dsh/desktop-alert/bridge.log` |
+| `node cli.mjs logs [--lines 40] [--redact]` | tail `~/.dsh/desktop-alert/bridge.log`; `--redact` masks session ids and titles, so a log can be pasted into a public issue |
 | `node cli.mjs install-autostart` / `uninstall-autostart` | Startup-folder shortcut (`DSH Desktop Alert.lnk`, window style 7) |
 | `node cli.mjs uninstall` | stop, remove autostart, delete the runtime copy **and write `~/.dsh/desktop-alert.disabled`** — without that marker the host half would respawn the bridge from its own shipped copy within 5 minutes. `cli install` removes the marker |
 
@@ -111,17 +111,19 @@ Set it per notification from the plugin (`CONFIG.desktopAlertSurface` in
 | `POST /click` | called by the card; answers `{ opened }` (`opened:false` means no page is connected, so the card falls back to the URL) |
 | `POST /ack` | the page confirming it executed the jump (recorded in the log) |
 | `POST /dismiss` | `{ sessionId }` - remove that session's Action Center toast (`dsh` + 13 chars tag); called when a waiting interaction is answered |
-| `GET /recent` | the last 50 notifications |
+| `GET /recent` | the last 50 notifications - only with `--verbose` (it carries session titles and ids) |
 | `POST /quit` | clean shutdown |
 
 ## Tests
 
 ```powershell
 node test/desktop-alert.mjs   # 16 checks: bundle runs, probe, completion/waiting -> /notify, click -> openSession + /ack
-node test/bridge.mjs          # 22 checks: real bridge on a private port, SSE, card spawn, click fan-out, origin guard, failure surface
+node test/bridge.mjs          # 25 checks: real bridge on a private port, SSE, card spawn, click fan-out, origin guard, failure surface
 node test/host.mjs            # 9 checks: api-session/error -> bridge, rate limit, a context without events
-node test/supervise.mjs       # 17 checks: restart decision, loop with fakes, real probe, single-instance guard
-node test/singleton.mjs       # 5 checks: two bridges started at once, exactly one survives (F1 regression)
+node test/supervise.mjs       # 26 checks: restart decision, loop with fakes, real probe, ownership of the pid file
+node test/redact.mjs          # 10 checks: log redaction against the ten line shapes the bridge really writes
+node test/singleton.mjs       # 29 checks: two bridges started at once (forced port and multi-port), exactly one survives
+npm test                      # all of the above: 125 checks (10 / 16 / 25 / 9 / 26 / 29 / 10)
 node test/smoke.mjs           # 10 checks: the pure reminder projection (unchanged)
 ```
 

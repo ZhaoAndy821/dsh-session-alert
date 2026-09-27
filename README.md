@@ -74,6 +74,7 @@ node desktop/cli.mjs status / logs      # 看状态 / 看日志
 - **等待类走两路**（`desktopAlertSurfaces.waiting: "both"`）：琥珀卡片 **+** Windows 通知同时发。卡片负责「点一下原地跳到那个审批/提问」，toast 负责「人不在时也不丢」——它留在操作中心，而卡片几秒后就淡出了。两者都落在右下角，所以卡片会自动上移 140 DIP 给 toast 让位（不然 toast 会盖住唯一可点的那个）。你回答 / 批准 / 打开该会话后，插件会调 `POST /dismiss` 删掉那条操作中心记录，不留过期的「会话在等你」。
 - 完成类仍然只有卡片（`card`）：完成不需要你动手，留一条操作中心记录反而要手动清。
 - **Windows 通知（`--surface toast`）**：以 AUMID `com.deepseek.dsh` 发出真正的系统通知，署名即 **DeepSeek Harness**（带应用图标），并留在操作中心；脚本发出的 toast 拿不到点击回调，所以它不能跳转。
+- **日志是本地的、且含会话标识**：`bridge.log` 会记 `session=<会话id>` 与调用方传来的 `title=`（实际是固定的界面文案，如「DSH · 会话已完成」；会话名走 `body`，而 `body` 不写日志）。要贴到公开 issue 时用 `node desktop/cli.mjs logs --redact` 先脱敏——它会掩掉 id、`title=` 值以及请求体回显；诊断端点 `/recent` 默认关闭，只在 `--verbose` 下存在。
 - **卡片停靠在侧栏底部**：提醒卡片是侧栏流式布局的一部分（不是浮层），宿主会把列表区域按卡片高度压缩，所以不会盖住成本面板或会话列表。
 - **失败也提醒（红色）**：连接不稳、接口报错、prompt 被拒这类「没有 turn 边界」的失败，浏览器侧看不到（宿主只发 `api-session/error`，不保证有 running→stopped 的状态迁移），所以由**宿主半边** `host/index.js` 订阅该事件后直接投给桥接服务 —— 页面关着也能提醒。卡片是红色 ✕，正文就是失败原因；同一个会话 60 秒内只弹一张（避免断线重连刷屏），并且失败后 8 秒内该会话的「已完成」卡片会被压掉 —— 失败才是真相。
 - **服务会被守着**：`desktop/supervise.mjs` 每 30 秒探一次 `/health`，挂了就拉起来（登录自启的快捷方式现在指向它，不再是那个只启动一次就完事的 bridge）；DSH 宿主半边也会在启动时和每 5 分钟兜一次底。之前桥接进程曾无声死掉、没人管，提醒就此整体失效——这是修它的原因。
@@ -92,10 +93,12 @@ node scripts/build.mjs && node test/smoke.mjs   # 纯逻辑：10 项投射/边�
 node test/browser-check.mjs                     # 真页面结构校验：插件是否真的挂上、有没有报错
 node test/browser-check.mjs --stage             # 端到端：发一条测试提示词 → 切走 → 等提醒出现 → 点卡片
 node test/desktop-alert.mjs                     # 16 项：bundle 沙箱内跑通 → 探活 → 完成/等待即 POST /notify → 点击即 openSession + /ack
-node test/bridge.mjs                            # 22 项：私有端口起真桥接、SSE、卡片进程、点击扇出、跨源拦截、失败面
+node test/bridge.mjs                            # 25 项：私有端口起真桥接、SSE、卡片进程、点击扇出、跨源拦截、失败面
 node test/host.mjs                              # 9 项：api-session/error → 桥接投递、限流、无事件总线也不抛
-node test/supervise.mjs                         # 17 项：守护决策、用假依赖跑循环、真探活、单实例守卫
-node test/singleton.mjs                         # 5 项：同一刻起两个 bridge，只允许活一个（F1 回归）
+node test/supervise.mjs                         # 26 项：守护决策、用假依赖跑循环、真探活、单实例守卫、pid 归属
+node test/redact.mjs                            # 10 项：日志脱敏对 bridge 真实写出的十种行形状
+node test/singleton.mjs                         # 29 项：同一刻起两个 bridge，只允许活一个（含多端口回落；F1 回归）
+npm test                                        # 全量 125 项：10 / 16 / 25 / 9 / 26 / 29 / 10
 ```
 
 `browser-check.mjs` 会用本机 profile 的凭证文件（`~/.dsh/.credentials.yaml` 里的 browser-session 密钥）现签一个会话 cookie 给无头 Chromium，所以不需要 token URL，也不会动你正在用的窗口。

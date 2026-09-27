@@ -17,6 +17,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
+import { redactLine } from './redact.mjs'
 import { fileURLToPath } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -95,7 +96,7 @@ async function post(route, payload) {
 }
 
 /** Files that make up the installed runtime. */
-const FILES = ['bridge.mjs', 'supervise.mjs', 'present.ps1', 'toast.ps1', 'cli.mjs', 'README.md', 'WORKBUDDY-NOTES.md']
+const FILES = ['bridge.mjs', 'supervise.mjs', 'redact.mjs', 'present.ps1', 'toast.ps1', 'cli.mjs', 'README.md', 'WORKBUDDY-NOTES.md']
 
 function install() {
   fs.mkdirSync(RUNTIME, { recursive: true })
@@ -165,11 +166,12 @@ function uninstallAutostart() {
   else console.log('no autostart shortcut at ' + SHORTCUT)
 }
 
-function tail(lines) {
+function tail(lines, redact) {
   const file = path.join(RUNTIME, 'bridge.log')
   if (!fs.existsSync(file)) { console.log('no log at ' + file); return }
   const all = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean)
-  console.log(all.slice(-lines).join('\n'))
+  const chosen = all.slice(-lines)
+  console.log((redact ? chosen.map(redactLine) : chosen).join('\n'))
 }
 
 switch (command) {
@@ -216,7 +218,7 @@ switch (command) {
     } catch (err) { console.error(String(err.message || err)) }
     break
   }
-  case 'logs': tail(Number(flag('--lines', '30')) || 30); break
+  case 'logs': tail(Number(flag('--lines', '30')) || 30, argv.includes('--redact')); break
   case 'install-autostart': installAutostart(); break
   case 'uninstall-autostart': uninstallAutostart(); break
   case 'uninstall': {

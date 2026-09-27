@@ -1,5 +1,24 @@
 lib/
 node_modules/
 *.log
+*.log.*
 .DS_Store
 Thumbs.db
+
+# Secrets and local state this project actually touches (DSH credentials, bridge
+# runtime files) - keep them one keystroke away from ever being staged.
+.env
+.env.*
+!.env.example
+.credentials*
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+*.bak-*
+*.pid
+endpoint.json
+tmp/
+test-results/
+playwright-report/

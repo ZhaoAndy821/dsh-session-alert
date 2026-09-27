@@ -15,7 +15,7 @@
  * usage: node test/bridge.mjs
  */
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -92,6 +92,48 @@ try {
     body: JSON.stringify({ kind: 'waiting', title: 'bridge test', body: 'integration', hint: 'click', sessionId: 's-live', durationMs: 4000 })
   })).json()
   ok('POST /notify accepts a card request', shown.ok === true && shown.slot === 0, JSON.stringify(shown))
+
+  // The raw log must be safe on its own - only --redact used to save it. A review
+  // found a malformed body echoing its title verbatim: the snippet is printed
+  // verbatim, so the body's own quote closed a naive character class early and
+  // everything after it survived.
+  // The marker is short on purpose: V8 echoes a bounded snippet of the body, and a
+  // marker outside that snippet is truncated, which makes the check pass even
+  // against the leaky bridge (a review measured exactly that).
+  const marker = 'AB12XY'
+  const hostileBody = '[\uFEFF"' + marker + '"]'
+  // Self-guard derived from V8 itself rather than from a guessed offset or length:
+  // the echoed snippet is the only channel that could carry the marker into the raw
+  // log, so if JSON.parse does not echo the marker this check cannot fail and must
+  // not pass silently. Measured rule on Node 24: a body of at most 20 characters is
+  // echoed whole; a longer body echoes the window [token - 10, token + 10), with
+  // "..." marking whichever side was actually cut - which only looks like a prefix
+  // here because this body puts the offending token at index 1. An offset-only
+  // threshold misses a long marker.
+  {
+    let echoed = ''
+    try {
+      JSON.parse(hostileBody)
+    } catch (error) {
+      echoed = String((error && error.message) || '')
+    }
+    if (!echoed.includes(marker)) {
+      console.error('raw-log check would be vacuous: JSON.parse did not echo the marker ' + marker + ' from ' + JSON.stringify(hostileBody) + ' (message: ' + echoed + ')')
+      process.exit(1)
+    }
+  }
+  await fetch('http://127.0.0.1:' + PORT + '/notify', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: hostileBody
+  }).catch(() => { /* 400 is the expected answer */ })
+  await sleep(400)
+  const rawLog = readFileSync(path.join(runtime, 'bridge.log'), 'utf8')
+  const failedLine = rawLog.split('\n').filter((line) => line.includes('request failed')).slice(-1)[0] || 'no request-failed line'
+  // The <redacted> clause is a positive control: without it, a bridge that stopped
+  // logging the parse error at all would leave this assertion passing while the
+  // redactor it is meant to exercise never runs.
+  ok('a malformed request body does not survive in the raw bridge log', failedLine.includes('request failed') && failedLine.includes('<redacted>') && !rawLog.includes(marker), failedLine)
   const cardUp = await waitFor(async () => { const h = await health(); return h && h.cards === 1 }, 6000)
   ok('the native card process is running', cardUp, JSON.stringify(await health()))
 
@@ -147,14 +189,40 @@ try {
   // Action Center cleanup: one stable, session-scoped toast tag
   const dismissOne = await (await fetch('http://127.0.0.1:' + PORT + '/dismiss', {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
-    body: JSON.stringify({ sessionId: 'session-9511a32a-c32a-4808-bec7-59ad48bd40ab' })
+    body: JSON.stringify({ sessionId: 'session-11111111-1111-4111-8111-111111111111' })
   })).json()
   const dismissTwo = await (await fetch('http://127.0.0.1:' + PORT + '/dismiss', {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
-    body: JSON.stringify({ sessionId: 'session-27d06715-c620-4808-bb23-65496203a9a3' })
+    body: JSON.stringify({ sessionId: 'session-22222222-2222-4222-8222-222222222222' })
   })).json()
   ok('POST /dismiss answers with a session-scoped toast tag', dismissOne.ok === true && String(dismissOne.tag).startsWith('dsh') && String(dismissOne.tag).length <= 16, JSON.stringify(dismissOne))
   ok('two sessions never share a toast tag', dismissOne.tag !== dismissTwo.tag, dismissOne.tag + ' vs ' + dismissTwo.tag)
+
+  // notification history is a diagnostics surface, not part of the default API
+  const hiddenRecent = await fetch('http://127.0.0.1:' + PORT + '/recent', { headers: { origin: 'http://127.0.0.1:4115' } })
+  ok('GET /recent is hidden unless the bridge runs with --verbose', hiddenRecent.status === 404, String(hiddenRecent.status))
+
+  // A gate needs both directions: without this, a route that always answered 404
+  // would pass the suite (review X3).
+  const verbosePort = 41498
+  const verboseRuntime = mkdtempSync(path.join(tmpdir(), 'dsh-alert-verbose-'))
+  const verboseChild = spawn(process.execPath, [BRIDGE, '--port', String(verbosePort), '--verbose'], {
+    env: { ...process.env, DSH_DESKTOP_ALERT_DIR: verboseRuntime },
+    stdio: 'ignore'
+  })
+  let verboseUp = false
+  for (let attempt = 0; attempt < 40 && !verboseUp; attempt += 1) {
+    try {
+      const res = await fetch('http://127.0.0.1:' + verbosePort + '/health', { signal: AbortSignal.timeout(1000) })
+      const body = await res.json()
+      verboseUp = Boolean(body && body.service === 'dsh-desktop-alert')
+    } catch { /* not up yet */ }
+    if (!verboseUp) await sleep(150)
+  }
+  const servedRecent = verboseUp ? await fetch('http://127.0.0.1:' + verbosePort + '/recent') : null
+  ok('a --verbose bridge serves /recent (200)', servedRecent !== null && servedRecent.status === 200, servedRecent ? String(servedRecent.status) : 'the verbose bridge did not start')
+  try { verboseChild.kill() } catch { /* ignore */ }
+  rmSync(verboseRuntime, { recursive: true, force: true })
 
   // foreign origins are refused
   const foreign = await fetch('http://127.0.0.1:' + PORT + '/notify', {
