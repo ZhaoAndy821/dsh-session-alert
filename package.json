@@ -25,15 +25,22 @@
   "engines": {
     "node": ">=20"
   },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
+  },
   "scripts": {
     "build": "node scripts/build.mjs",
     "push": "node scripts/push.mjs",
     "status": "node scripts/push.mjs --status",
     "rm": "node scripts/push.mjs --rm",
-    "test": "node scripts/build.mjs && node test/smoke.mjs && node test/desktop-alert.mjs && node test/bridge.mjs",
+    "test": "node scripts/build.mjs && node test/smoke.mjs && node test/desktop-alert.mjs && node test/bridge.mjs && node test/host.mjs && node test/supervise.mjs && node test/singleton.mjs",
+    "check:browser": "node test/browser-check.mjs",
     "test:model": "node test/smoke.mjs",
     "test:client": "node test/desktop-alert.mjs",
     "test:bridge": "node test/bridge.mjs",
+    "test:host": "node test/host.mjs",
+    "test:supervise": "node test/supervise.mjs",
+    "test:singleton": "node test/singleton.mjs",
     "desktop:install": "node desktop/cli.mjs install",
     "desktop:start": "node desktop/cli.mjs start",
     "desktop:stop": "node desktop/cli.mjs stop",

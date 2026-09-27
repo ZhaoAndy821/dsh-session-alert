@@ -395,13 +395,57 @@ function listening(port) {
   })
 }
 
-/** Is another copy of this service already on the port? */
-async function probe(port) {
+/** One /health attempt: 'answered' tells "not our service" from "no answer at all". */
+async function probeOnce(port) {
   try {
     const res = await fetch('http://127.0.0.1:' + port + '/health', { signal: AbortSignal.timeout(800) })
     const body = await res.json()
-    return body && body.service === SERVICE ? body : null
-  } catch { return null }
+    return { answered: true, ours: Boolean(body && body.service === SERVICE), body: body || null }
+  } catch { return { answered: false, ours: false, body: null } }
+}
+
+/** Is another copy of this service already on the port? */
+async function probe(port) {
+  const result = await probeOnce(port)
+  return result.ours ? result.body : null
+}
+
+const REPROBE_ATTEMPTS = 3
+const REPROBE_SPACING_MS = 400
+
+/**
+ * The bind failed with EADDRINUSE, so somebody holds the port - but "listening"
+ * is not "answering": a bridge frozen right after bind (debugger, GC pause, AV
+ * freeze) misses a single probe, and walking on then leaves two live bridges on
+ * two ports. Re-probe up to 3 times, 400 ms apart, before giving the port up.
+ * A port that answers with a foreign identity will not become ours: walk on at
+ * once instead of waiting out the window.
+ */
+async function probeHeld(port, attempts = REPROBE_ATTEMPTS, spacingMs = REPROBE_SPACING_MS) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, spacingMs))
+    const result = await probeOnce(port)
+    if (result.ours) return result.body
+    if (result.answered) return null
+  }
+  return null
+}
+
+/**
+ * Say why this process is stopping and then stop. console.log() followed by
+ * process.exit(0) can truncate the line when stdout is a pipe, which is how the
+ * caller learns that it lost the race; a synchronous write of fd 1 cannot be cut
+ * short by the exit that follows it.
+ */
+function exitAlreadyRunning(port, body, reason) {
+  log(reason)
+  const line = JSON.stringify({ ok: true, alreadyRunning: true, port, ...body }) + '\n'
+  try {
+    fs.writeSync(1, line)
+  } catch {
+    try { process.stdout.write(line) } catch { /* bridge.log already has the reason */ }
+  }
+  process.exit(0)
 }
 
 function shutdown(code) {
@@ -420,9 +464,7 @@ let bound = 0
 for (const port of candidates) {
   const running = await probe(port)
   if (running) {
-    log('another bridge is already listening on ' + port + ' (pid unknown) - exiting')
-    console.log(JSON.stringify({ ok: true, alreadyRunning: true, port, ...running }))
-    process.exit(0)
+    exitAlreadyRunning(port, running, 'another bridge is already listening on ' + port + ' (pid unknown) - exiting')
   }
   try {
     await listening(port)
@@ -431,13 +473,12 @@ for (const port of candidates) {
   } catch (err) {
     if (err && err.code === 'EADDRINUSE') {
       // The pre-bind probe can lose a race with another spawner. Re-probe the
-      // port that just refused us: if our own service answers, this process must
-      // exit, or the machine ends up with two bridges on two ports.
-      const owner = await probe(port)
+      // port that just refused us (a few times: it may be bound but wedged): if
+      // our own service answers, this process must exit, or the machine ends up
+      // with two bridges on two ports.
+      const owner = await probeHeld(port)
       if (owner) {
-        log('port ' + port + ' is held by another bridge - exiting instead of opening a second one')
-        console.log(JSON.stringify({ ok: true, alreadyRunning: true, port, ...owner }))
-        process.exit(0)
+        exitAlreadyRunning(port, owner, 'port ' + port + ' is held by another bridge - exiting instead of opening a second one')
       }
       log('port ' + port + ' busy (not our service), trying the next one')
       continue

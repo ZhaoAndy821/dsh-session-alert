@@ -26,7 +26,11 @@ const PORTS = [41411, 41412, 41413]
 const STARTUP = path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
 const SHORTCUT = path.join(STARTUP, 'DSH Desktop Alert.lnk')
 const SUPERVISOR_PID = path.join(RUNTIME, 'supervisor.pid')
-const DISABLED = path.join(path.dirname(RUNTIME), 'desktop-alert.disabled')
+// 'uninstall' marks the service disabled here, in DSH_HOME - never beside
+// RUNTIME. DSH_DESKTOP_ALERT_DIR can move the runtime, and the host half only
+// knows DSH_HOME, so a marker that moved with the runtime would be invisible to
+// the process that resurrects the bridge from its shipped copy.
+const DISABLED = path.join(HOME, 'desktop-alert.disabled')
 
 /** Stop a supervisor we started, so 'stop' really stops the service. */
 function stopSupervisor() {

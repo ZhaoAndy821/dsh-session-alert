@@ -24,6 +24,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
 const RUNTIME = process.env.DSH_DESKTOP_ALERT_DIR || path.join(HOME, 'desktop-alert')
+// The marker lives in DSH_HOME even when the runtime is relocated: the host half
+// only knows DSH_HOME, so a marker beside RUNTIME would be invisible to the
+// process that would otherwise resurrect the bridge from its shipped copy.
+const DISABLED = path.join(HOME, 'desktop-alert.disabled')
 const LOG = path.join(RUNTIME, 'supervisor.log')
 const PORTS = [41411, 41412, 41413]
 
@@ -79,7 +83,7 @@ export async function probe(ports = PORTS) {
 
 /** The marker 'cli uninstall' leaves behind, so nothing respawns a removed service. */
 export function disabledMarker() {
-  return path.join(path.dirname(RUNTIME), 'desktop-alert.disabled')
+  return DISABLED
 }
 
 /** Start the bridge detached; returns the pid or 0. */
@@ -148,9 +152,14 @@ export async function runSupervisor(deps) {
   const emit = deps.log || log
   const sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)))
   const rounds = deps.rounds === undefined ? Infinity : deps.rounds
+  // Normalise once, then use the same value for the log line, the decision and
+  // the sleep: 'deps.retryMs || RETRY_MS' logged 15000 for an injected 0 while
+  // decide() honoured the 0, so the log described a loop that was not running.
+  const checkMs = deps.checkMs || CHECK_MS
+  const retryMs = deps.retryMs === undefined ? RETRY_MS : deps.retryMs
   let lastSpawnAt = 0
   let lastHealthy = false
-  emit('supervisor started (check ' + (deps.checkMs || CHECK_MS) + 'ms, retry ' + (deps.retryMs || RETRY_MS) + 'ms)')
+  emit('supervisor started (check ' + checkMs + 'ms, retry ' + retryMs + 'ms)')
   for (let round = 0; round < rounds; round += 1) {
     const port = await check()
     const healthy = port !== 0
@@ -159,14 +168,14 @@ export async function runSupervisor(deps) {
     const action = decide({
       healthy,
       sinceLastSpawnMs: Date.now() - lastSpawnAt,
-      retryMs: deps.retryMs === undefined ? RETRY_MS : deps.retryMs
+      retryMs
     })
     if (action === 'spawn') {
       lastSpawnAt = Date.now()
       const pid = start()
       emit(pid ? 'started the bridge (pid ' + pid + ')' : 'bridge start failed')
     }
-    if (round + 1 < rounds) await sleep(deps.checkMs || CHECK_MS)
+    if (round + 1 < rounds) await sleep(checkMs)
   }
   return lastHealthy
 }

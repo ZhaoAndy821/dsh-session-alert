@@ -42,6 +42,10 @@ let resolvedPort = 0
 let lastSpawnAt = 0
 
 const HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
+// The marker lives in DSH_HOME, not next to a relocated runtime: every process
+// that can respawn the bridge must find the same file, and this half only knows
+// DSH_HOME (desktop/cli.mjs and desktop/supervise.mjs use the same expression).
+const DISABLED = path.join(HOME, 'desktop-alert.disabled')
 
 /** Where the bridge script lives: the installed runtime first, the package second. */
 function bridgeScript() {
@@ -51,9 +55,13 @@ function bridgeScript() {
   return fs.existsSync(shipped) ? shipped : ''
 }
 
-/** The marker 'cli uninstall' leaves behind; the shipped copy must not undo it. */
-function disabledMarker() {
-  return path.join(path.dirname(path.join(HOME, 'desktop-alert')), 'desktop-alert.disabled')
+/**
+ * The marker 'cli uninstall' leaves behind; the shipped copy must not undo it.
+ * Exported so test/supervise.mjs can assert that all three halves resolve the
+ * same path - the split between them is exactly where this bug lived.
+ */
+export function disabledMarker() {
+  return DISABLED
 }
 
 /** Bring the bridge up when it is not answering; never throws, never storms. */

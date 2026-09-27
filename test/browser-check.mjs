@@ -33,9 +33,28 @@ const flag = (name, fallback) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback
 }
 
-const PLAYWRIGHT_ROOT =
-  process.env.PLAYWRIGHT_ROOT || 'D:/GitHub/dsh-cute-user-fold/node_modules/playwright-core'
-const { chromium } = require(PLAYWRIGHT_ROOT)
+/**
+ * Resolve playwright-core without naming a path on this machine (desensitization
+ * finding (a), 2026-09-27: the old default leaked another local project's
+ * directory): an explicit PLAYWRIGHT_ROOT wins, then the package as a normal
+ * dependency of this repo, and only then a clear error naming the fix.
+ */
+async function loadPlaywright() {
+  const tried = []
+  const code = (err) => (err && err.code ? err.code : err && err.message ? err.message : String(err))
+  const root = process.env.PLAYWRIGHT_ROOT
+  if (root) {
+    try { return require(root) } catch (err) { tried.push('PLAYWRIGHT_ROOT=' + root + ' (' + code(err) + ')') }
+  }
+  try { return await import('playwright-core') } catch (err) { tried.push("import('playwright-core') (" + code(err) + ')') }
+  throw new Error(
+    'playwright-core could not be resolved - ' + tried.join('; ') +
+    '. Install it as a devDependency (npm install -D playwright-core), or point ' +
+    'PLAYWRIGHT_ROOT at a directory that contains it.'
+  )
+}
+
+const { chromium } = await loadPlaywright()
 
 const url = flag('--url', process.env.DSH_WEB_URL || 'http://127.0.0.1:4115')
 
@@ -139,10 +158,15 @@ try {
     const anchor = document.querySelector('.dsa-anchor')
     const footer = anchor ? anchor.closest('[class*="_footArea"]') : null
     return {
+      // The ancestor must exist in its own right: if the shell renames the footer
+      // class, footerWidth is 0 and the check below would pass vacuously
+      // (review F5 weakness / R6).
+      footerFound: !!footer,
       footerWidth: footer ? Math.round(footer.getBoundingClientRect().width) : 0,
       dock: !!document.querySelector('.dsa-dock')
     }
   })
+  assert.equal(dockState.footerFound, true, 'no sidebar footer ancestor matched [class*="_footArea"] around .dsa-anchor, so the dock check below would be vacuous - update the selector if the shell renamed it: ' + JSON.stringify(dockState))
   assert.ok(dockState.footerWidth < 160 || dockState.dock, 'the sidebar is wide but no dock element exists: ' + JSON.stringify(dockState))
   console.log('structure: dock: ' + JSON.stringify(dockState))
   assert.deepEqual(consoleErrors.filter(mine), [], 'plugin logged console errors')
