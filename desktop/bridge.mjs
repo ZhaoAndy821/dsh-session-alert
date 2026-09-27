@@ -243,6 +243,9 @@ function remember(entry) {
 }
 
 let lastFire = { key: '', at: 0 }
+/** sessionId -> { kind, at }: a failure explains the completion that follows it. */
+const lastBySession = new Map()
+const FAILURE_WINS_MS = 8000
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', 'http://127.0.0.1')
@@ -304,6 +307,14 @@ const server = http.createServer(async (req, res) => {
       }
       lastFire = { key, at: now }
       const surfaces = surfacesOf(body.surface)
+      // A run that fails usually also stops, so the client half raises its
+      // "completed" card moments later. The failure is the truthful one.
+      const previous = payload.sessionId ? lastBySession.get(payload.sessionId) : null
+      if (previous && previous.kind === 'failed' && payload.kind === 'completed' && now - previous.at < FAILURE_WINS_MS) {
+        log('suppressed the completion card after a failure for session=' + payload.sessionId)
+        return json(res, 200, { ok: true, suppressed: 'after-failure' })
+      }
+      if (payload.sessionId) lastBySession.set(payload.sessionId, { kind: payload.kind, at: now })
       if (body.dryRun === true) return json(res, 200, { ok: true, dryRun: true, surfaces, payload })
       const slot = surfaces.indexOf('card') >= 0 ? showCard(payload) : null
       if (surfaces.indexOf('toast') >= 0) showToast(payload)

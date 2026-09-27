@@ -112,6 +112,18 @@ try {
   })).json()
   ok('a failed notification gets the red card defaults', failedKind.ok === true && failedKind.payload.accent === '#FFEF4444' && failedKind.payload.glyph === '✕', JSON.stringify(failedKind.payload))
 
+  // a completion that follows a failure for the same session is suppressed
+  const afterFailure = await (await fetch('http://127.0.0.1:' + PORT + '/notify', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: JSON.stringify({ kind: 'completed', title: 'done after failing', sessionId: 's-fail', dryRun: true })
+  })).json()
+  ok('a completion right after a failure is suppressed', afterFailure.ok === true && afterFailure.suppressed === 'after-failure', JSON.stringify(afterFailure))
+  const otherSession = await (await fetch('http://127.0.0.1:' + PORT + '/notify', {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },
+    body: JSON.stringify({ kind: 'completed', title: 'unrelated', sessionId: 's-other', dryRun: true })
+  })).json()
+  ok('another session still gets its completion card', otherSession.ok === true && otherSession.dryRun === true, JSON.stringify(otherSession))
+
   // a UTF-8 BOM in the body must not silently drop a notification
   const bomResponse = await fetch('http://127.0.0.1:' + PORT + '/notify', {
     method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:4115' },

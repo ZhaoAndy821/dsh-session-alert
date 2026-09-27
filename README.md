@@ -72,7 +72,7 @@ node desktop/cli.mjs status / logs      # 看状态 / 看日志
 - **弹窗卡片（默认 `card`）**：无边框、置顶、不抢焦点，出现在主屏右下角，9 秒自动淡出，鼠标悬停时暂停；点一下 → 已经打开的 DSH 标签页**原地跳到该会话**（不再新开窗口），同时把浏览器窗口提到前台。只有「没有任何页面连着」时才退回打开页面 URL。
 - 完成/等待类提醒默认**页面有焦点也弹**（`desktopAlertWhen: always`）：提醒只针对「不是主视图」的会话，人本来就没在看它。想恢复 WorkBuddy 那种「前台不打扰」就改成 `unfocused`。
 - **Windows 通知（`--surface toast`）**：以 AUMID `com.deepseek.dsh` 发出真正的系统通知，署名即 **DeepSeek Harness**（带应用图标），并留在操作中心；脚本发出的 toast 拿不到点击回调，所以它不能跳转。
-- **失败也提醒（红色）**：连接不稳、接口报错、prompt 被拒这类「没有 turn 边界」的失败，浏览器侧看不到（宿主只发 `api-session/error`，不保证有 running→stopped 的状态迁移），所以由**宿主半边** `host/index.js` 订阅该事件后直接投给桥接服务 —— 页面关着也能提醒。卡片是红色 ✕，正文就是失败原因；同一个会话 60 秒内只弹一张，避免断线重连刷屏。
+- **失败也提醒（红色）**：连接不稳、接口报错、prompt 被拒这类「没有 turn 边界」的失败，浏览器侧看不到（宿主只发 `api-session/error`，不保证有 running→stopped 的状态迁移），所以由**宿主半边** `host/index.js` 订阅该事件后直接投给桥接服务 —— 页面关着也能提醒。卡片是红色 ✕，正文就是失败原因；同一个会话 60 秒内只弹一张（避免断线重连刷屏），并且失败后 8 秒内该会话的「已完成」卡片会被压掉 —— 失败才是真相。
 - 只在页面不在前台时弹（与 Z-Code WorkBuddy 的 `mainWindow.isFocused()` 判定同构）；服务没起来时，侧边栏卡片区会显示一行「桌面提醒服务未启动」。
 - 设计、接口与取舍（含从 WorkBuddy `main/index.js` 的 `showTaskNotification` 学到什么）见 [`desktop/README.md`](desktop/README.md)。
 
